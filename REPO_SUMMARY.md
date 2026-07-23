@@ -1,21 +1,21 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-23T14:49:39.430Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-23T14:49:47.022Z.
 
 ## Overview
 
-Article Enhancer Agent — paste an article, pick a content type, and watch a live AI pipeline analyze gaps, generate recommendations, type out an enhanced draft in real time, and verify coverage with staged result panels.
+Article Enhancer Agent — paste an article, pick a content type, and watch an AI pipeline analyze gaps, generate recommendations, write an enhanced draft live token-by-token, and verify coverage, with staged panels, a live progress checklist, heartbeat status chip, and cancellable optimistic UI.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 29
 
 ## Features
 
-- Live token-by-token streaming of the enhanced article rendered as Markdown
-- Per-stage pipeline progress checklist (gap analysis → recommendations → writing → verification)
+- Live token streaming of the enhanced article rendered as Markdown
+- Per-stage pipeline progress checklist (gap analysis → recommendations → writer → verifier)
 - Staged reveal of Gap Analysis, Recommendations, Enhanced Article, and Coverage Verification cards as data arrives
-- Heartbeat/status events routed to a pulsing status chip with live elapsed-time counter
-- Optimistic UI with instant loading state, Cancel via AbortController, and on-brand error card with Retry
+- Heartbeat/status events routed to a pulsing status chip with live elapsed timer — never into content
+- Optimistic UI with instant loading state, Cancel via AbortController, and Retry on error
 - Server-side streaming proxy keeps the API key out of the client bundle
 
 ## Tech Stack
@@ -59,9 +59,9 @@ Article Enhancer Agent — paste an article, pick a content type, and watch a li
 - `components/ErrorCard.tsx`
 - `components/GapAnalysisCard.tsx`
 - `components/MarkdownRenderer.tsx`
+- `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
-- `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
 
 ### Libraries
@@ -103,9 +103,9 @@ Article Enhancer Agent — paste an article, pick a content type, and watch a li
 - `components/ErrorCard.tsx`
 - `components/GapAnalysisCard.tsx`
 - `components/MarkdownRenderer.tsx`
+- `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
-- `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
 - `lib/prisma.ts`
 - `lib/stream.ts`
@@ -121,7 +121,7 @@ Article Enhancer Agent — paste an article, pick a content type, and watch a li
 
 ## Latest Change
 
-- **Updated at:** 2026-07-23T14:49:39.430Z
+- **Updated at:** 2026-07-23T14:49:47.022Z
 - **Request:** Edit the existing Article Enhancer Agent app to make the "Enhance Article" flow feel fully interactive and live while the backend runs (it takes ~1–2 minutes). Implement ALL of the following.
 
 === SERVER ROUTE /api/enhance ===
