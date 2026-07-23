@@ -1,22 +1,23 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-23T14:49:47.022Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-23T15:07:03.235Z.
 
 ## Overview
 
-Article Enhancer Agent — paste an article, pick a content type, and watch an AI pipeline analyze gaps, generate recommendations, write an enhanced draft live token-by-token, and verify coverage, with staged panels, a live progress checklist, heartbeat status chip, and cancellable optimistic UI.
+Article Enhancer Agent app with a fully interactive, live streaming Enhance Article flow: server-side streaming proxy, live token rendering, per-stage progress checklist, staged panel reveal, status chip with elapsed time, and optimistic UI with cancel/retry.
 
 **Repository:** `article-enhancer-ui`  
-**File count:** 29
+**File count:** 30
 
 ## Features
 
-- Live token streaming of the enhanced article rendered as Markdown
-- Per-stage pipeline progress checklist (gap analysis → recommendations → writer → verifier)
-- Staged reveal of Gap Analysis, Recommendations, Enhanced Article, and Coverage Verification cards as data arrives
-- Heartbeat/status events routed to a pulsing status chip with live elapsed timer — never into content
-- Optimistic UI with instant loading state, Cancel via AbortController, and Retry on error
-- Server-side streaming proxy keeps the API key out of the client bundle
+- Server-side streaming proxy to the enhancement workflow (API key never exposed to the client)
+- Live token rendering of the enhanced article as Markdown while streaming
+- Per-stage pipeline progress checklist (gap analysis, recommendations, writer, verifier)
+- Staged reveal of Gap Analysis, Recommendations, Enhanced Article, and Coverage Verification cards
+- Heartbeat/status events routed to a pulsing status chip with a live elapsed-time counter
+- Optimistic UI with immediate loading state, Cancel via AbortController, and Retry on error
+- Client-side inline validation for URL, article text, and content type inputs
 
 ## Tech Stack
 
@@ -62,6 +63,7 @@ Article Enhancer Agent — paste an article, pick a content type, and watch an A
 - `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
+- `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
 
 ### Libraries
@@ -106,6 +108,7 @@ Article Enhancer Agent — paste an article, pick a content type, and watch an A
 - `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
+- `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
 - `lib/prisma.ts`
 - `lib/stream.ts`
@@ -121,7 +124,7 @@ Article Enhancer Agent — paste an article, pick a content type, and watch an A
 
 ## Latest Change
 
-- **Updated at:** 2026-07-23T14:49:47.022Z
+- **Updated at:** 2026-07-23T15:07:03.235Z
 - **Request:** Edit the existing Article Enhancer Agent app to make the "Enhance Article" flow feel fully interactive and live while the backend runs (it takes ~1–2 minutes). Implement ALL of the following.
 
 === SERVER ROUTE /api/enhance ===

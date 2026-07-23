@@ -17,6 +17,12 @@ export type StageId = 'gapanalysis' | 'recommendations' | 'enhancedarticlewriter
 
 export type StageStatus = 'pending' | 'active' | 'done'
 
+export interface StageItem {
+  id: StageId
+  label: string
+  status: StageStatus
+}
+
 export type SelectedOutputKey =
   | 'recommendations.recommendations'
   | 'enhancedarticlewriter.content'

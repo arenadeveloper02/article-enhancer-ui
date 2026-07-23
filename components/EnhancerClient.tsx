@@ -28,6 +28,7 @@ import { StatusChip } from '@/components/StatusChip'
 import { ResultCard } from '@/components/ResultCard'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ProgressChecklist } from '@/components/ProgressChecklist'
+import type { ChecklistStage } from '@/components/ProgressChecklist'
 import { GapAnalysisCard } from '@/components/GapAnalysisCard'
 import { RecommendationsCard } from '@/components/RecommendationsCard'
 import { CoverageCard } from '@/components/CoverageCard'
@@ -375,12 +376,14 @@ export function EnhancerClient() {
     setErrorMessage('')
   }
 
-  const isStreaming = phase === 'streaming'
-  const showChecklist = phase === 'streaming' || phase === 'done'
-  const showArticleCard =
-    phase === 'done' ||
-    content.length > 0 ||
-    (phase === 'streaming' && stages.enhancedarticlewriter !== 'pending')
+  const streaming = phase === 'streaming'
+  const showPipeline = streaming || phase === 'done'
+
+  const checklistStages: ChecklistStage[] = STAGE_ORDER.map((id) => ({
+    id,
+    label: STAGE_LABELS[id],
+    status: stages[id],
+  }))
 
   return (
     <div className="space-y-6">
@@ -392,24 +395,23 @@ export function EnhancerClient() {
         <div className="space-y-5">
           <div>
             <label htmlFor="article-url" className="mb-1.5 block text-sm font-medium text-ink">
-              Article URL <span className="text-accent">*</span>
+              Article URL <span className="text-rose-500">*</span>
             </label>
             <input
               id="article-url"
-              type="text"
+              type="url"
               inputMode="url"
+              autoComplete="url"
+              placeholder="https://example.com/blog/my-article"
               value={articleUrl}
-              onChange={(e) => {
-                setArticleUrl(e.target.value)
-                if (errors.articleUrl) setErrors((prev) => ({ ...prev, articleUrl: undefined }))
-              }}
-              placeholder="https://example.com/my-article"
+              onChange={(e) => setArticleUrl(e.target.value)}
+              disabled={streaming}
               aria-invalid={Boolean(errors.articleUrl)}
               aria-describedby={errors.articleUrl ? 'article-url-error' : undefined}
-              className={`${inputBase} ${errors.articleUrl ? 'border-rose-400' : 'border-slate-200'}`}
+              className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'} disabled:opacity-60`}
             />
             {errors.articleUrl && (
-              <p id="article-url-error" className="mt-1.5 text-xs font-medium text-rose-600">
+              <p id="article-url-error" role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
                 {errors.articleUrl}
               </p>
             )}
@@ -417,23 +419,21 @@ export function EnhancerClient() {
 
           <div>
             <label htmlFor="article-text" className="mb-1.5 block text-sm font-medium text-ink">
-              Article Text <span className="text-accent">*</span>
+              Article text <span className="text-rose-500">*</span>
             </label>
             <textarea
               id="article-text"
               rows={8}
-              value={articleText}
-              onChange={(e) => {
-                setArticleText(e.target.value)
-                if (errors.articleText) setErrors((prev) => ({ ...prev, articleText: undefined }))
-              }}
               placeholder="Paste the full article text here…"
+              value={articleText}
+              onChange={(e) => setArticleText(e.target.value)}
+              disabled={streaming}
               aria-invalid={Boolean(errors.articleText)}
               aria-describedby={errors.articleText ? 'article-text-error' : undefined}
-              className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-400' : 'border-slate-200'}`}
+              className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'} disabled:opacity-60`}
             />
             {errors.articleText && (
-              <p id="article-text-error" className="mt-1.5 text-xs font-medium text-rose-600">
+              <p id="article-text-error" role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
                 {errors.articleText}
               </p>
             )}
@@ -442,30 +442,26 @@ export function EnhancerClient() {
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <label htmlFor="content-type" className="mb-1.5 block text-sm font-medium text-ink">
-                Content Type <span className="text-accent">*</span>
+                Content type <span className="text-rose-500">*</span>
               </label>
               <select
                 id="content-type"
                 value={contentType}
-                onChange={(e) => {
-                  setContentType(e.target.value)
-                  if (errors.contentType) setErrors((prev) => ({ ...prev, contentType: undefined }))
-                }}
+                onChange={(e) => setContentType(e.target.value)}
+                disabled={streaming}
                 aria-invalid={Boolean(errors.contentType)}
                 aria-describedby={errors.contentType ? 'content-type-error' : undefined}
-                className={`${inputBase} appearance-none ${errors.contentType ? 'border-rose-400' : 'border-slate-200'}`}
+                className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'} disabled:opacity-60`}
               >
-                <option value="" disabled>
-                  Select a content type…
-                </option>
-                {CONTENT_TYPES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                <option value="">Select a content type…</option>
+                {CONTENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
                   </option>
                 ))}
               </select>
               {errors.contentType && (
-                <p id="content-type-error" className="mt-1.5 text-xs font-medium text-rose-600">
+                <p id="content-type-error" role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
                   {errors.contentType}
                 </p>
               )}
@@ -474,93 +470,80 @@ export function EnhancerClient() {
             {contentType === 'Other' && (
               <div>
                 <label htmlFor="other-type" className="mb-1.5 block text-sm font-medium text-ink">
-                  Describe it <span className="text-accent">*</span>
+                  Describe your content type <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="other-type"
                   type="text"
+                  placeholder="e.g. Case study"
                   value={otherType}
-                  onChange={(e) => {
-                    setOtherType(e.target.value)
-                    if (errors.otherType) setErrors((prev) => ({ ...prev, otherType: undefined }))
-                  }}
-                  placeholder="e.g. Case Study, Newsletter…"
+                  onChange={(e) => setOtherType(e.target.value)}
+                  disabled={streaming}
                   aria-invalid={Boolean(errors.otherType)}
                   aria-describedby={errors.otherType ? 'other-type-error' : undefined}
-                  className={`${inputBase} ${errors.otherType ? 'border-rose-400' : 'border-slate-200'}`}
+                  className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'} disabled:opacity-60`}
                 />
                 {errors.otherType && (
-                  <p id="other-type-error" className="mt-1.5 text-xs font-medium text-rose-600">
+                  <p id="other-type-error" role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
                     {errors.otherType}
                   </p>
                 )}
               </div>
             )}
           </div>
-        </div>
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
               type="submit"
-              disabled={isStreaming}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={streaming}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isStreaming && (
-                <span
-                  aria-hidden="true"
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
-                />
+              {streaming ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
+                  />
+                  Enhancing…
+                </>
+              ) : (
+                'Enhance Article'
               )}
-              {isStreaming ? 'Enhancing…' : 'Enhance Article'}
             </button>
-            {isStreaming && (
+            {streaming && (
               <button
                 type="button"
                 onClick={handleCancel}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-ink-soft shadow-sm transition hover:border-slate-300 hover:text-ink"
+                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 Cancel
               </button>
             )}
+            {streaming && (
+              <StatusChip
+                message={statusMessage || 'Enhancing your article…'}
+                elapsedSeconds={elapsed}
+              />
+            )}
           </div>
-          <p className="text-xs text-slate-400">
-            <span className="text-accent">*</span> Required fields
-          </p>
         </div>
       </form>
 
-      {isStreaming && (
-        <div className="card-enter">
-          <StatusChip
-            message={statusMessage || 'Contacting the enhancement agent…'}
-            elapsedSeconds={elapsed}
-          />
-        </div>
-      )}
+      {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
 
-      {showChecklist && (
-        <ProgressChecklist
-          stages={STAGE_ORDER.map((id) => ({ id, label: STAGE_LABELS[id], status: stages[id] }))}
-        />
-      )}
+      {showPipeline && <ProgressChecklist stages={checklistStages} />}
 
       {gapData && <GapAnalysisCard data={gapData} />}
 
       {recItems && recItems.length > 0 && <RecommendationsCard items={recItems} />}
 
-      {showArticleCard && (
-        <div className="card-enter">
-          <h2 className="mb-2 px-1 font-display text-xs font-semibold uppercase tracking-wider text-ink-soft">
-            Enhanced Article
-          </h2>
-          <ResultCard content={content} streaming={isStreaming} />
+      {(content || streaming) && (
+        <div className={content ? 'card-enter' : ''}>
+          <ResultCard content={content} streaming={streaming} />
         </div>
       )}
 
       {coverage && <CoverageCard data={coverage} />}
-
-      {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
     </div>
   )
 }
