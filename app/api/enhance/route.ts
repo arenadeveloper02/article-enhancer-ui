@@ -5,7 +5,19 @@ export const runtime = 'nodejs'
 
 const UPSTREAM_URL =
   'https://test-agent.thearena.ai/api/workflows/9aafe5d7-1d24-477a-ad3f-0be9bf79c04f/execute'
-const API_KEY = 'sk-sim-T8eEbhp_o3qI01OEp5Ok_VdiwR4Q6Fht'
+const SIM_API_KEY = 'sk-sim-T8eEbhp_o3qI01OEp5Ok_VdiwR4Q6Fht'
+
+const SELECTED_OUTPUTS = [
+  'recommendations.recommendations',
+  'enhancedarticlewriter.content',
+  'coverageverifier.criteria',
+  'gapanalysis.competitor_strengths',
+  'gapanalysis.coverage_gaps',
+  'gapanalysis.underdeveloped_sections',
+  'coverageverifier.overall_score',
+  'coverageverifier.passed',
+  'coverageverifier.summary',
+]
 
 interface IncomingBody {
   article_url?: unknown
@@ -43,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
     upstream = await fetch(UPSTREAM_URL, {
       method: 'POST',
       headers: {
-        'X-API-Key': API_KEY,
+        'X-API-Key': SIM_API_KEY,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -51,6 +63,7 @@ export async function POST(request: Request): Promise<Response> {
         article_text: articleText,
         content_type: contentType,
         stream: true,
+        selectedOutputs: SELECTED_OUTPUTS,
       }),
     })
   } catch {
@@ -71,19 +84,29 @@ export async function POST(request: Request): Promise<Response> {
     )
   }
 
-  const upstreamContentType = upstream.headers.get('content-type') ?? 'text/plain; charset=utf-8'
+  const upstreamContentType = upstream.headers.get('content-type') ?? ''
+
+  // Non-streamed JSON fallback — forward the JSON body as-is.
+  if (upstreamContentType.includes('application/json') && upstream.body === null) {
+    const text = await upstream.text()
+    return new Response(text, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    })
+  }
 
   if (!upstream.body) {
     const text = await upstream.text()
     return new Response(text, {
-      headers: { 'Content-Type': upstreamContentType },
+      headers: { 'Content-Type': upstreamContentType || 'text/plain; charset=utf-8' },
     })
   }
 
+  // Pipe the upstream stream straight through — never buffer the whole body.
   return new Response(upstream.body, {
     headers: {
-      'Content-Type': upstreamContentType,
+      'Content-Type': upstreamContentType || 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     },
   })

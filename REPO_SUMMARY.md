@@ -1,23 +1,22 @@
-# Repository Summary: Article Enhancer Agent
+# Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-23T14:10:16.901Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-23T14:49:39.430Z.
 
 ## Overview
 
-A single-page Next.js App Router app that enhances articles via a streaming AI agent, with live token rendering, heartbeat status chips, and Markdown output.
+Article Enhancer Agent — paste an article, pick a content type, and watch a live AI pipeline analyze gaps, generate recommendations, type out an enhanced draft in real time, and verify coverage with staged result panels.
 
 **Repository:** `article-enhancer-ui`  
-**File count:** 25
+**File count:** 29
 
 ## Features
 
-- Streaming enhancement with live token rendering
-- Server-side proxy route keeping the API key private
-- Client-side form validation with inline errors
-- Heartbeat/status messages routed to a live status chip
-- Unicode escape decoding for clean rendered text
-- Markdown rendering with styled result card
-- Error card with retry and elapsed-time indicator
+- Live token-by-token streaming of the enhanced article rendered as Markdown
+- Per-stage pipeline progress checklist (gap analysis → recommendations → writing → verification)
+- Staged reveal of Gap Analysis, Recommendations, Enhanced Article, and Coverage Verification cards as data arrives
+- Heartbeat/status events routed to a pulsing status chip with live elapsed-time counter
+- Optimistic UI with instant loading state, Cancel via AbortController, and on-brand error card with Retry
+- Server-side streaming proxy keeps the API key out of the client bundle
 
 ## Tech Stack
 
@@ -29,7 +28,6 @@ A single-page Next.js App Router app that enhances articles via a streaming AI a
 
 ## Infrastructure
 
-- **Neon project ID:** `patient-feather-02283586` — managed by Sim Development; do not delete or replace
 - **DATABASE_URL:** set on Vercel when Neon is connected — do not commit real credentials
 
 ## Routes & Pages
@@ -56,10 +54,14 @@ A single-page Next.js App Router app that enhances articles via a streaming AI a
 
 ### Components
 
+- `components/CoverageCard.tsx`
 - `components/EnhancerClient.tsx`
 - `components/ErrorCard.tsx`
+- `components/GapAnalysisCard.tsx`
 - `components/MarkdownRenderer.tsx`
+- `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
+- `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
 
 ### Libraries
@@ -72,9 +74,9 @@ A single-page Next.js App Router app that enhances articles via a streaming AI a
 ### Config
 
 - `.env.example`
-- `.gitignore`
 - `next-env.d.ts`
 - `next.config.ts`
+- `package-lock.json`
 - `package.json`
 - `postcss.config.mjs`
 - `tailwind.config.ts`
@@ -88,7 +90,6 @@ A single-page Next.js App Router app that enhances articles via a streaming AI a
 ## Complete File Index
 
 - `.env.example`
-- `.gitignore`
 - `README.md`
 - `REPO_SUMMARY.md`
 - `app/api/enhance/route.ts`
@@ -97,16 +98,21 @@ A single-page Next.js App Router app that enhances articles via a streaming AI a
 - `app/layout.tsx`
 - `app/not-found.tsx`
 - `app/page.tsx`
+- `components/CoverageCard.tsx`
 - `components/EnhancerClient.tsx`
 - `components/ErrorCard.tsx`
+- `components/GapAnalysisCard.tsx`
 - `components/MarkdownRenderer.tsx`
+- `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
+- `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
 - `lib/prisma.ts`
 - `lib/stream.ts`
 - `lib/types.ts`
 - `next-env.d.ts`
 - `next.config.ts`
+- `package-lock.json`
 - `package.json`
 - `postcss.config.mjs`
 - `prisma/schema.prisma`
@@ -115,43 +121,57 @@ A single-page Next.js App Router app that enhances articles via a streaming AI a
 
 ## Latest Change
 
-- **Updated at:** 2026-07-23T14:10:16.901Z
-- **Request:** Build a production-ready Next.js (App Router, TypeScript) application called "Article Enhancer Agent".
+- **Updated at:** 2026-07-23T14:49:39.430Z
+- **Request:** Edit the existing Article Enhancer Agent app to make the "Enhance Article" flow feel fully interactive and live while the backend runs (it takes ~1–2 minutes). Implement ALL of the following.
 
-Layout constraints:
+=== SERVER ROUTE /api/enhance ===
+Keep the API key hardcoded SERVER-SIDE ONLY (never in the client bundle):
+  const SIM_API_KEY = 'sk-sim-T8eEbhp_o3qI01OEp5Ok_VdiwR4Q6Fht';
+Proxy to:
+  POST https://test-agent.thearena.ai/api/workflows/9aafe5d7-1d24-477a-ad3f-0be9bf79c04f/execute
+  Headers: { 'X-API-Key': SIM_API_KEY, 'Content-Type': 'application/json' }
+  Body (JSON): {
+    article_url: <article_url>,
+    article_text: <article_text>,
+    content_type: <content_type>,
+    stream: true,
+    selectedOutputs: [
+      'recommendations.recommendations',
+      'enhancedarticlewriter.content',
+      'coverageverifier.criteria',
+      'gapanalysis.competitor_strengths',
+      'gapanalysis.coverage_gaps',
+      'gapanalysis.underdeveloped_sections',
+      'coverageverifier.overall_score',
+      'coverageverifier.passed',
+      'coverageverifier.summary'
+    ]
+  }
+The route MUST stream: read the upstream response body as a ReadableStream and pipe/forward the chunks straight through to the client (Content-Type: text/event-stream, no buffering, no await res.json()). Support a non-streamed JSON fallback if the upstream returns application/json. Never call res.json() on the whole thing before responding — that is what makes the button feel frozen.
 
-No header/nav bar, no footer. Just a clean, centered, single-page interface with a max-width container.
-Modern, minimal SaaS aesthetic — not a generic AI-template look. Avoid the default "cream background + terracotta accent" or "black background + neon accent" clichés. Use a considered palette (e.g., off-white background, ink-navy text, an indigo/violet accent for primary actions), pair a distinctive display font for headings with a clean body font (e.g., Space Grotesk + Inter), and add one signature detail — like an animated gradient/progress line on the result card while streaming, and a live "elapsed time" status chip with a pulsing dot.
-Fully responsive, rounded corners, subtle card shadows, good spacing, visible keyboard focus states, respects reduced-motion.
+=== CLIENT: consume the stream ===
+The client form calls ONLY the local /api/enhance route. Use fetch + response.body.getReader() to read the SSE/chunked stream incrementally and update the UI as chunks arrive. Parse SSE lines (data: ...), tolerate partial chunks across reads (buffer until newline).
 
-Form:
+Apply ALL FIVE UX behaviors:
 
-Three inputs: Article URL (required text input), Article Text (required multi-line textarea), and Content Type (required — a select/dropdown with sensible options like Blog Post, Landing Page, Guide, News, Product Page, plus an "Other" free-text option).
-An Enhance Article submit button with disabled/loading state.
-Client-side validation with clear inline error states (not just browser default).
+1) LIVE TOKEN RENDERING — as enhancedarticlewriter.content tokens arrive, append them progressively into the result card so the enhanced article visibly types out in real time (render as Markdown; re-render on each chunk). No waiting for the full payload.
 
-API integration:
+2) PER-STAGE PROGRESS CHECKLIST — show a vertical checklist of the pipeline stages mapped from the streamed block events / selectedOutputs keys:
+   - Analyzing gaps (gapanalysis)
+   - Generating recommendations (recommendations)
+   - Writing enhanced draft (enhancedarticlewriter)
+   - Verifying coverage (coverageverifier)
+   Each item shows: pending (dim), in-progress (animated spinner/pulse), done (checkmark). Advance a stage to done when that block's output arrives in the stream; mark the next as in-progress.
 
-Create a server-side route handler at /api/enhance that proxies to:
-Endpoint: https://test-agent.thearena.ai/api/workflows/9aafe5d7-1d24-477a-ad3f-0be9bf79c04f/execute
-Method: POST
-Headers: { 'X-API-Key': 'sk-sim-T8eEbhp_o3qI01OEp5Ok_VdiwR4Q6Fht', 'Content-Type': 'application/json' }
-Body: { "article_url": <article_url>, "article_text": <article_text>, "content_type": <content_type>, "stream": true }
-The API key must be hardcoded server-side only — never exposed to the client bundle.
-The client form calls only the local /api/enhance route.
+3) STAGED REVEAL OF PANELS — render each result section in its own card the moment its data arrives, not at the end:
+   - Gap Analysis card (competitor_strengths, coverage_gaps, underdeveloped_sections as lists)
+   - Recommendations card (recommendations list, ordered/prioritized)
+   - Enhanced Article card (the live-typed markdown from #1)
+   - Coverage Verification card (overall_score as a score badge/gauge, passed as a pass/fail pill, summary text, criteria list)
+   Cards animate in (fade/slide) as they populate.
 
-Streaming handling:
+4) ROUTE HEARTBEAT/STATUS EVENTS TO A STATUS CHIP, NOT THE CONTENT — detect heartbeat/progress/status/keepalive events and any messages like 'This usually takes 1–2 minutes · 15s elapsed' and DO NOT render them into the article content or any result card. Instead feed them into a subtle live status chip with a pulsing dot showing the current activity + a live elapsed-time counter (ticking every second on the client). Also decode any raw unicode escape sequences (e.g. \u2013) into real characters everywhere before display, whether they arrive as valid JSON or double-escaped plain text.
 
-Read the external response as a stream (SSE/chunked) and progressively render tokens as they arrive, so text appears live.
-Also support a non-streamed JSON fallback gracefully.
-Bug to fix: raw literal unicode escape sequences (e.g. \u2013) must never be shown to the user as text — they should always be decoded into real characters (e.g. an en dash), whether they arrive inside valid JSON or as double-escaped plain text.
-Bug to fix: any heartbeat/progress/status messages from the stream (e.g. "This usually takes 1–2 minutes · 15s elapsed") must NOT be mixed into the rendered answer content. Detect and route these into a separate, subtle live status indicator/chip instead.
+5) OPTIMISTIC UI — on click of Enhance Article: immediately disable the button, switch it to a loading state, start the elapsed-time chip and the progress checklist right away (before the first byte returns), and clear/reset any previous results. Provide a Cancel button that aborts the fetch via AbortController and restores the idle state. On error, show the on-brand error card with a Retry action (re-submits the same inputs).
 
-Rendering:
-
-Render the final response as properly formatted Markdown (headings, bold, lists, links) using a markdown renderer, inside a well-styled result card.
-Show a polished loading skeleton/spinner during streaming.
-Show a clean, on-brand error card if the request fails, with a retry option.
-
-Other requirements:
-Clean, typed, production-quality code (proper component structure, error boundaries where relevant).
+Keep the existing layout/theme constraints intact: no header/nav/footer, centered single-page max-width container, considered palette (off-white bg, ink-navy text, indigo/violet accent), Space Grotesk + Inter fonts, animated gradient/progress line on the result card while streaming, responsive, rounded corners, subtle shadows, visible focus states, respects reduced-motion. Keep the three inputs (Article URL required, Article Text required, Content Type required select with Blog Post/Landing Page/Guide/News/Product Page + Other free-text) with client-side inline validation. Clean, typed, production-quality React/TypeScript with proper component structure and error boundaries.

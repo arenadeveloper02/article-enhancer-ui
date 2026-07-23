@@ -12,3 +12,31 @@ export interface EnhancePayload {
   article_text: string
   content_type: string
 }
+
+export type StageId = 'gapanalysis' | 'recommendations' | 'enhancedarticlewriter' | 'coverageverifier'
+
+export type StageStatus = 'pending' | 'active' | 'done'
+
+export type SelectedOutputKey =
+  | 'recommendations.recommendations'
+  | 'enhancedarticlewriter.content'
+  | 'coverageverifier.criteria'
+  | 'gapanalysis.competitor_strengths'
+  | 'gapanalysis.coverage_gaps'
+  | 'gapanalysis.underdeveloped_sections'
+  | 'coverageverifier.overall_score'
+  | 'coverageverifier.passed'
+  | 'coverageverifier.summary'
+
+export interface GapAnalysisData {
+  competitorStrengths: string[]
+  coverageGaps: string[]
+  underdevelopedSections: string[]
+}
+
+export interface CoverageData {
+  overallScore: number | null
+  passed: boolean | null
+  summary: string
+  criteria: string[]
+}

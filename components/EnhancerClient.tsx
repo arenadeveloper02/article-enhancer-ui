@@ -2,18 +2,64 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { EnhanceFormErrors, RequestPhase } from '@/lib/types'
+import type {
+  CoverageData,
+  EnhanceFormErrors,
+  GapAnalysisData,
+  RequestPhase,
+  SelectedOutputKey,
+  StageId,
+  StageStatus,
+} from '@/lib/types'
 import {
+  STAGE_ORDER,
+  collectSelectedOutputs,
   decodeUnicodeEscapes,
   extractStatusMessage,
   extractToken,
+  identifyStage,
   isHeartbeatMessage,
+  toPassed,
+  toScore,
+  toStringList,
+  toText,
 } from '@/lib/stream'
 import { StatusChip } from '@/components/StatusChip'
 import { ResultCard } from '@/components/ResultCard'
 import { ErrorCard } from '@/components/ErrorCard'
+import { ProgressChecklist } from '@/components/ProgressChecklist'
+import { GapAnalysisCard } from '@/components/GapAnalysisCard'
+import { RecommendationsCard } from '@/components/RecommendationsCard'
+import { CoverageCard } from '@/components/CoverageCard'
 
 const CONTENT_TYPES = ['Blog Post', 'Landing Page', 'Guide', 'News', 'Product Page', 'Other'] as const
+
+const STAGE_LABELS: Record<StageId, string> = {
+  gapanalysis: 'Analyzing gaps',
+  recommendations: 'Generating recommendations',
+  enhancedarticlewriter: 'Writing enhanced draft',
+  coverageverifier: 'Verifying coverage',
+}
+
+const INITIAL_STAGES: Record<StageId, StageStatus> = {
+  gapanalysis: 'pending',
+  recommendations: 'pending',
+  enhancedarticlewriter: 'pending',
+  coverageverifier: 'pending',
+}
+
+const EMPTY_GAP: GapAnalysisData = {
+  competitorStrengths: [],
+  coverageGaps: [],
+  underdevelopedSections: [],
+}
+
+const EMPTY_COVERAGE: CoverageData = {
+  overallScore: null,
+  passed: null,
+  summary: '',
+  criteria: [],
+}
 
 const inputBase =
   'w-full rounded-xl border bg-white px-4 py-2.5 text-sm text-ink shadow-sm transition placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-accent'
@@ -29,6 +75,10 @@ export function EnhancerClient() {
   const [statusMessage, setStatusMessage] = useState('')
   const [elapsed, setElapsed] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
+  const [stages, setStages] = useState<Record<StageId, StageStatus>>(INITIAL_STAGES)
+  const [gapData, setGapData] = useState<GapAnalysisData | null>(null)
+  const [recItems, setRecItems] = useState<string[] | null>(null)
+  const [coverage, setCoverage] = useState<CoverageData | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
   const startRef = useRef(0)
@@ -76,16 +126,103 @@ export function EnhancerClient() {
     return Object.keys(next).length === 0
   }
 
+  function activateStage(id: StageId): void {
+    setStages((prev) => (prev[id] === 'pending' ? { ...prev, [id]: 'active' } : prev))
+  }
+
+  function advanceStage(done: StageId): void {
+    setStages((prev) => {
+      const next: Record<StageId, StageStatus> = { ...prev }
+      const idx = STAGE_ORDER.indexOf(done)
+      for (let i = 0; i <= idx; i++) {
+        next[STAGE_ORDER[i]] = 'done'
+      }
+      for (let i = idx + 1; i < STAGE_ORDER.length; i++) {
+        const stageId = STAGE_ORDER[i]
+        if (next[stageId] === 'active') break
+        if (next[stageId] === 'pending') {
+          next[stageId] = 'active'
+          break
+        }
+      }
+      return next
+    })
+  }
+
+  function finishRun(): void {
+    setStages(() => {
+      const next: Record<StageId, StageStatus> = { ...INITIAL_STAGES }
+      for (const id of STAGE_ORDER) next[id] = 'done'
+      return next
+    })
+    setStatusMessage('')
+    setPhase('done')
+  }
+
+  function applyOutputs(outputs: Partial<Record<SelectedOutputKey, unknown>>): boolean {
+    let handled = false
+    const entries = Object.entries(outputs) as [SelectedOutputKey, unknown][]
+    for (const [key, value] of entries) {
+      handled = true
+      switch (key) {
+        case 'gapanalysis.competitor_strengths':
+          setGapData((prev) => ({ ...(prev ?? EMPTY_GAP), competitorStrengths: toStringList(value) }))
+          advanceStage('gapanalysis')
+          break
+        case 'gapanalysis.coverage_gaps':
+          setGapData((prev) => ({ ...(prev ?? EMPTY_GAP), coverageGaps: toStringList(value) }))
+          advanceStage('gapanalysis')
+          break
+        case 'gapanalysis.underdeveloped_sections':
+          setGapData((prev) => ({ ...(prev ?? EMPTY_GAP), underdevelopedSections: toStringList(value) }))
+          advanceStage('gapanalysis')
+          break
+        case 'recommendations.recommendations':
+          setRecItems(toStringList(value))
+          advanceStage('recommendations')
+          break
+        case 'enhancedarticlewriter.content': {
+          const text = toText(value)
+          if (text) setContent((prev) => (text.length >= prev.length ? text : prev))
+          advanceStage('enhancedarticlewriter')
+          break
+        }
+        case 'coverageverifier.overall_score':
+          setCoverage((prev) => ({ ...(prev ?? EMPTY_COVERAGE), overallScore: toScore(value) }))
+          advanceStage('coverageverifier')
+          break
+        case 'coverageverifier.passed':
+          setCoverage((prev) => ({ ...(prev ?? EMPTY_COVERAGE), passed: toPassed(value) }))
+          advanceStage('coverageverifier')
+          break
+        case 'coverageverifier.summary':
+          setCoverage((prev) => ({ ...(prev ?? EMPTY_COVERAGE), summary: toText(value) }))
+          advanceStage('coverageverifier')
+          break
+        case 'coverageverifier.criteria':
+          setCoverage((prev) => ({ ...(prev ?? EMPTY_COVERAGE), criteria: toStringList(value) }))
+          advanceStage('coverageverifier')
+          break
+      }
+    }
+    return handled
+  }
+
   async function runEnhance(): Promise<void> {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
 
+    // Optimistic UI: reset everything and start the run state immediately.
     setPhase('streaming')
     setContent('')
     setStatusMessage('')
     setErrorMessage('')
     setElapsed(0)
+    setGapData(null)
+    setRecItems(null)
+    setCoverage(null)
+    setStages({ ...INITIAL_STAGES, gapanalysis: 'active' })
     startRef.current = Date.now()
 
     const resolvedType = contentType === 'Other' ? otherType.trim() : contentType
@@ -112,14 +249,25 @@ export function EnhancerClient() {
           setStatusMessage(decodeUnicodeEscapes(status))
           return
         }
+        const outputs = collectSelectedOutputs(parsed)
+        const handledOutputs = applyOutputs(outputs)
+        const stage = identifyStage(parsed)
+        if (handledOutputs) return
         const token = extractToken(parsed)
         if (token !== null) {
           if (isHeartbeatMessage(token)) {
             setStatusMessage(decodeUnicodeEscapes(token))
             return
           }
-          setContent((prev) => prev + decodeUnicodeEscapes(token))
+          if (stage === null || stage === 'enhancedarticlewriter') {
+            activateStage('enhancedarticlewriter')
+            setContent((prev) => prev + decodeUnicodeEscapes(token))
+          } else {
+            activateStage(stage)
+          }
+          return
         }
+        if (stage !== null) activateStage(stage)
         return
       } catch {
         // Not JSON — treat as plain text below.
@@ -129,6 +277,7 @@ export function EnhancerClient() {
         setStatusMessage(decodeUnicodeEscapes(line))
         return
       }
+      activateStage('enhancedarticlewriter')
       setContent((prev) => prev + decodeUnicodeEscapes(line) + '\n')
     }
 
@@ -161,13 +310,17 @@ export function EnhancerClient() {
       if (responseType.includes('application/json')) {
         const data: unknown = await res.json()
         const status = extractStatusMessage(data)
-        const token = status ? null : extractToken(data)
-        if (token !== null) {
-          setContent(decodeUnicodeEscapes(token))
-        } else if (!status) {
-          setContent(decodeUnicodeEscapes(JSON.stringify(data, null, 2)))
+        const outputs = collectSelectedOutputs(data)
+        const handled = applyOutputs(outputs)
+        if (!handled && !status) {
+          const token = extractToken(data)
+          if (token !== null) {
+            setContent(decodeUnicodeEscapes(token))
+          } else {
+            setContent(decodeUnicodeEscapes(JSON.stringify(data, null, 2)))
+          }
         }
-        setPhase('done')
+        finishRun()
         return
       }
 
@@ -190,7 +343,7 @@ export function EnhancerClient() {
       buffer += decoder.decode()
       if (buffer.trim()) handleLine(buffer)
 
-      setPhase('done')
+      finishRun()
     } catch (err) {
       if (controller.signal.aborted) return
       setErrorMessage(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
@@ -209,8 +362,25 @@ export function EnhancerClient() {
     void runEnhance()
   }
 
+  function handleCancel(): void {
+    abortRef.current?.abort()
+    setPhase('idle')
+    setStatusMessage('')
+    setElapsed(0)
+    setContent('')
+    setGapData(null)
+    setRecItems(null)
+    setCoverage(null)
+    setStages(INITIAL_STAGES)
+    setErrorMessage('')
+  }
+
   const isStreaming = phase === 'streaming'
-  const showResult = phase === 'streaming' || phase === 'done'
+  const showChecklist = phase === 'streaming' || phase === 'done'
+  const showArticleCard =
+    phase === 'done' ||
+    content.length > 0 ||
+    (phase === 'streaming' && stages.enhancedarticlewriter !== 'pending')
 
   return (
     <div className="space-y-6">
@@ -330,35 +500,67 @@ export function EnhancerClient() {
         </div>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="submit"
-            disabled={isStreaming}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isStreaming ? (
-              <>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={isStreaming}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isStreaming && (
                 <span
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:hidden"
                   aria-hidden="true"
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
                 />
-                Enhancing…
-              </>
-            ) : (
-              'Enhance Article'
+              )}
+              {isStreaming ? 'Enhancing…' : 'Enhance Article'}
+            </button>
+            {isStreaming && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-ink-soft shadow-sm transition hover:border-slate-300 hover:text-ink"
+              >
+                Cancel
+              </button>
             )}
-          </button>
-          {isStreaming && (
-            <StatusChip
-              message={statusMessage || 'Enhancing your article'}
-              elapsedSeconds={elapsed}
-            />
-          )}
+          </div>
+          <p className="text-xs text-slate-400">
+            <span className="text-accent">*</span> Required fields
+          </p>
         </div>
       </form>
 
-      {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
+      {isStreaming && (
+        <div className="card-enter">
+          <StatusChip
+            message={statusMessage || 'Contacting the enhancement agent…'}
+            elapsedSeconds={elapsed}
+          />
+        </div>
+      )}
 
-      {showResult && <ResultCard content={content} streaming={isStreaming} />}
+      {showChecklist && (
+        <ProgressChecklist
+          stages={STAGE_ORDER.map((id) => ({ id, label: STAGE_LABELS[id], status: stages[id] }))}
+        />
+      )}
+
+      {gapData && <GapAnalysisCard data={gapData} />}
+
+      {recItems && recItems.length > 0 && <RecommendationsCard items={recItems} />}
+
+      {showArticleCard && (
+        <div className="card-enter">
+          <h2 className="mb-2 px-1 font-display text-xs font-semibold uppercase tracking-wider text-ink-soft">
+            Enhanced Article
+          </h2>
+          <ResultCard content={content} streaming={isStreaming} />
+        </div>
+      )}
+
+      {coverage && <CoverageCard data={coverage} />}
+
+      {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
     </div>
   )
 }
