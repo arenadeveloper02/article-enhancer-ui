@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  min-height: 100vh;
+}
+
+:focus-visible {
+  outline: 2px solid #5b5bd6;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.gradient-line {
+  background: linear-gradient(90deg, #5b5bd6, #8b5cf6, #c084fc, #5b5bd6);
+  background-size: 250% 100%;
+  animation: gradient-slide 1.8s linear infinite;
+}
+
+@keyframes gradient-slide {
+  0% {
+    background-position: 0% 0;
+  }
+  100% {
+    background-position: 250% 0;
+  }
+}
+
+.skeleton-bar {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gradient-line,
+  .skeleton-bar {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
