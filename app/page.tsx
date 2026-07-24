@@ -2,7 +2,7 @@ import { EnhancerClient } from '@/components/EnhancerClient'
 
 export default function HomePage() {
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
+    <main className="mx-auto w-full max-w-7xl px-6 py-12 sm:py-16 lg:px-10">
       <header className="mb-10 text-center">
         <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium tracking-wide text-ink-soft shadow-sm">
           <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />

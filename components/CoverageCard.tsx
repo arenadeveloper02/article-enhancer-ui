@@ -17,7 +17,7 @@ export function CoverageCard({ data, status }: CoverageCardProps) {
   return (
     <section
       aria-label="Coverage verification"
-      className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
+      className="card-enter rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6"
     >
       <SectionHeader title="Coverage Verification" icon="✔" status={status} />
       {showSkeleton ? (
@@ -32,8 +32,8 @@ export function CoverageCard({ data, status }: CoverageCardProps) {
       ) : data === null ? (
         <p className="text-sm italic text-slate-400">No data</p>
       ) : (
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-5">
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-4">
             {data.overall_score !== null ? (
               <div
                 aria-label={`Overall score ${Math.round(data.overall_score)} out of 100`}
@@ -73,47 +73,49 @@ export function CoverageCard({ data, status }: CoverageCardProps) {
           {data.criteria.length > 0 ? (
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Criteria</h3>
-              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100">
-                {data.criteria.map((item, index) => (
-                  <li key={index} className="flex items-start gap-3 px-4 py-3">
-                    {item.passed === true ? (
-                      <span
-                        aria-hidden="true"
-                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-600"
-                      >
-                        ✓
-                      </span>
-                    ) : item.passed === false ? (
-                      <span
-                        aria-hidden="true"
-                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-100 text-[11px] font-bold text-rose-600"
-                      >
-                        ✗
-                      </span>
-                    ) : (
-                      <span
-                        aria-hidden="true"
-                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-400"
-                      >
-                        –
-                      </span>
-                    )}
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-ink">{item.name}</span>
-                        {typeof item.score === 'number' && (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600">
-                            {Math.round(item.score)}
-                          </span>
-                        )}
+              <div className="max-h-72 overflow-y-auto pr-1">
+                <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100">
+                  {data.criteria.map((item, index) => (
+                    <li key={index} className="flex items-start gap-3 px-4 py-3">
+                      {item.passed === true ? (
+                        <span
+                          aria-hidden="true"
+                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-600"
+                        >
+                          ✓
+                        </span>
+                      ) : item.passed === false ? (
+                        <span
+                          aria-hidden="true"
+                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-100 text-[11px] font-bold text-rose-600"
+                        >
+                          ✗
+                        </span>
+                      ) : (
+                        <span
+                          aria-hidden="true"
+                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-400"
+                        >
+                          –
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-ink">{item.name}</span>
+                          {typeof item.score === 'number' && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600">
+                              {Math.round(item.score)}
+                            </span>
+                          )}
+                        </div>
+                        {item.notes ? (
+                          <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">{item.notes}</p>
+                        ) : null}
                       </div>
-                      {item.notes ? (
-                        <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">{item.notes}</p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           ) : status === 'done' ? (
             <p className="text-sm italic text-slate-400">No criteria provided</p>

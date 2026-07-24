@@ -4,6 +4,7 @@ import { SectionHeader } from '@/components/SectionHeader'
 interface RecommendationsCardProps {
   data: RecommendationsData | null
   status: SectionStatus
+  embedded?: boolean
 }
 
 function priorityClasses(priority: string): string {
@@ -14,13 +15,17 @@ function priorityClasses(priority: string): string {
   return 'bg-slate-100 text-slate-600'
 }
 
-export function RecommendationsCard({ data, status }: RecommendationsCardProps) {
+export function RecommendationsCard({ data, status, embedded = false }: RecommendationsCardProps) {
   const showSkeleton = data === null && status !== 'done'
   const items = data ? data.recommendations : []
   return (
     <section
       aria-label="Recommendations"
-      className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
+      className={
+        embedded
+          ? ''
+          : 'card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8'
+      }
     >
       <SectionHeader title="Recommendations" icon="☰" status={status} />
       {showSkeleton ? (

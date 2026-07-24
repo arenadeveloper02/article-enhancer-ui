@@ -1,26 +1,24 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-24T05:23:59.350Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-24T06:32:09.862Z.
 
 ## Overview
 
-Article Enhancer Agent — submits an article to an SEO enhancement pipeline and renders live streaming results (enhanced article, gap analysis, recommendations, coverage verification) with blockId-routed SSE parsing, defensive normalizers, staged panel reveal, and a polished streaming UX.
+Article Enhancer Agent — submit an article to an SEO enhancement pipeline and watch live streaming results in a two-column layout with a sticky insights sidebar, tabbed Gap Analysis/Recommendations, and an always-visible coverage scorecard.
 
 **Repository:** `article-enhancer-ui`  
-**File count:** 32
+**File count:** 33
 
 ## Features
 
-- Server-side streaming proxy to the enhancement workflow with hardcoded server-only API key
-- SSE parsing routed by blockId prefixes with [DONE] sentinel handling
-- Four purpose-built result sections: Enhanced Article (live-typed markdown), Gap Analysis, Recommendations, Coverage Verification
-- Shared defensive normalizers in lib/normalize.ts (never render raw JSON)
-- Per-stage progress checklist with pending/active/done states
-- Heartbeat/status events routed to a live status chip with elapsed timer
-- Optimistic UI with Cancel (AbortController) and Retry
-- Client-side inline validation for URL, text, and content type
-- Copy-article button, live word count, blinking streaming caret
-- Responsive indigo/violet theme with reduced-motion support
+- Live SSE streaming of enhanced article markdown with blinking caret and live word count
+- Two-column results layout: wide article column + sticky sidebar (status chip, progress checklist, coverage scorecard, tabbed insights)
+- Tabbed Gap Analysis / Recommendations card with count badges and live pulsing dots per tab
+- Compact coverage verification scorecard with circular score badge, pass/fail pill, and scrollable criteria list
+- Per-stage progress checklist driven by blockId routing
+- Heartbeat/status events routed to a status chip with live elapsed timer
+- Optimistic UI with Cancel (AbortController) and Retry on error
+- Defensive normalizers for all JSON panels with unicode-escape decoding
 
 ## Tech Stack
 
@@ -62,6 +60,7 @@ Article Enhancer Agent — submits an article to an SEO enhancement pipeline and
 - `components/EnhancerClient.tsx`
 - `components/ErrorCard.tsx`
 - `components/GapAnalysisCard.tsx`
+- `components/InsightTabs.tsx`
 - `components/MarkdownRenderer.tsx`
 - `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
@@ -109,6 +108,7 @@ Article Enhancer Agent — submits an article to an SEO enhancement pipeline and
 - `components/EnhancerClient.tsx`
 - `components/ErrorCard.tsx`
 - `components/GapAnalysisCard.tsx`
+- `components/InsightTabs.tsx`
 - `components/MarkdownRenderer.tsx`
 - `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
@@ -131,7 +131,7 @@ Article Enhancer Agent — submits an article to an SEO enhancement pipeline and
 
 ## Latest Change
 
-- **Updated at:** 2026-07-24T05:23:59.350Z
+- **Updated at:** 2026-07-24T06:32:09.862Z
 - **Request:** Generate a production-quality Next.js (App Router, TypeScript) single-page web app called "Article Enhancer" that submits an article to an SEO enhancement pipeline and renders the LIVE streaming results with a polished, interactive UX. Implement ALL of the following exactly.
 
 === SERVER ROUTE: app/api/enhance/route.ts ===
@@ -244,30 +244,51 @@ The form calls ONLY the local /api/enhance route (never the upstream directly). 
   3. If payload === '[DONE]' => mark the run complete, finalize all stages to done, and STOP. NEVER render '[DONE]' into any panel or the content — that was the previous bug.
   4. Otherwise JSON.parse(payload) inside try/catch (swallow parse errors on partial/non-JSON lines). On success you get { blockId, chunk }. Append chunk to that blockId's accumulator, mark that stage in-progress on first chunk, run the accumulated text through the relevant normalizer (see OUTPUT DATA CONTRACTS), and route the normalized result to the mapped panel, re-rendering on each chunk.
 
-=== RESULTS OUTPUT — FOUR REQUIRED SECTIONS (THIS IS THE MOST IMPORTANT PART) ===
-The results area MUST render EXACTLY these four sections, each as its own distinct, clearly-labeled card with a header (section title + icon + a status pill), in this vertical order. Every section must have a great, purpose-built UI — not a raw JSON dump. Handle empty/loading/error states per section (skeleton shimmer while pending, graceful 'No data' if a normalizer returns an empty/default shape after [DONE]).
+=== PAGE LAYOUT: TWO-COLUMN, NOT A SINGLE NARROW STACK (fixes excess side whitespace) ===
+Do NOT use a single centered narrow column (e.g. max-w-2xl) for the whole page — this wastes horizontal space and forces unrelated sections into one long vertical scroll. Instead:
 
-1) ENHANCED ARTICLE section (blockId 88db1a98) — the primary, largest card, visually emphasized (accent border/heading).
-   - Render the accumulated content as clean, readable Markdown (headings, bold, lists, links, blockquotes) in an article-typography container (comfortable measure ~68ch, generous line-height, styled h1-h4, ul/ol, code, blockquote).
+  - Overall page container: max-w-7xl mx-auto, with responsive horizontal padding (px-6 on mobile, px-10+ on desktop) — wide enough to use the viewport, not a narrow centered card floating in a sea of white.
+  - The INPUT FORM (Article URL / Article Text / Content Type / Enhance button) stays a single centered card at the top, narrower than the results area (e.g. max-w-3xl mx-auto), since a form doesn't need full width.
+  - Once results start streaming, switch to a two-column grid below the form (lg:grid-cols-[1fr_380px] gap-8, single column below the lg breakpoint):
+
+    LEFT COLUMN (wide, primary):
+      - The ENHANCED ARTICLE section only. Full height, full reading measure (~68ch internal max-width), the single visual focus of the page.
+
+    RIGHT COLUMN (narrow, sticky sidebar — sticky top-6 on desktop so it stays in view while the article scrolls):
+      1. The live status chip (elapsed timer + pulsing dot + current activity text).
+      2. The per-stage progress checklist.
+      3. The COVERAGE VERIFICATION section, rendered as a COMPACT scorecard (gauge/score badge + pass/fail pill + short summary + a collapsed/scrollable criteria list) — this stays permanently visible in the sidebar, NOT tabbed, since it's the at-a-glance verdict people want without clicking anything.
+      4. Below that, ONE card containing a 2-TAB switcher: "Gap Analysis" | "Recommendations". Only these two sections are tabbed — they are the more list-heavy, secondary-insight panels, and tabbing them (instead of stacking both in full) is what actually saves vertical space, unlike tabbing the article or the score which people need to see live and immediately.
+         - Each tab label carries: a count badge (number of items in that section) and a small pulsing live-dot when that section is actively receiving new chunks — so a user parked on "Recommendations" can still tell "Gap Analysis" is updating in the background without switching.
+         - Default active tab on load: "Gap Analysis" (it streams first per the stage order).
+         - Switching tabs must NOT interrupt or discard the other tab's accumulated/streaming data — both keep accumulating in the background regardless of which tab is active.
+
+  - Mobile (below lg): collapse to a single column in this order: form → status chip → progress checklist → Enhanced Article → Coverage Verification (compact) → tabbed Gap Analysis/Recommendations card. No sidebar stickiness on mobile.
+
+  - All four sections must still individually satisfy every requirement in the RESULTS OUTPUT section below (empty/loading/error states, staged reveal animations, status pills) — the two-column/tab arrangement changes WHERE they render, not what they render or when their data populates.
+
+=== RESULTS OUTPUT — FOUR REQUIRED SECTIONS (content requirements; placement per PAGE LAYOUT above) ===
+Every section must have a great, purpose-built UI — not a raw JSON dump. Handle empty/loading/error states per section (skeleton shimmer while pending, graceful 'No data' if a normalizer returns an empty/default shape after [DONE]).
+
+1) ENHANCED ARTICLE section (blockId 88db1a98) — left column, visually emphasized (accent border/heading).
+   - Render the accumulated content as clean, readable Markdown (headings, bold, lists, links, blockquotes), generous line-height, styled h1-h4, ul/ol, code, blockquote.
    - LIVE TOKEN RENDERING: append tokens progressively so the article visibly types out in real time; re-render on each chunk; show a blinking caret at the end while streaming.
-   - Include a 'Copy article' button (copies the raw markdown) and a word-count badge. Support marked/highlighted additions if the content includes them.
+   - Include a 'Copy article' button (copies the raw markdown) and a word-count badge.
 
-2) GAP ANALYSIS section (blockId 0f239b6f) — render the normalized GapAnalysisData as three clearly separated, labeled sub-groups, each a titled list with its own icon and count badge (count reflects the normalized array length):
-   - Competitor Strengths
-   - Coverage Gaps
-   - Underdeveloped Sections
-   Use distinct subtle color accents per sub-group. Never render raw JSON; if the normalizer returns an empty array for a group after [DONE], show a 'No data' placeholder for that specific sub-group (not the whole card).
+2) GAP ANALYSIS section (blockId 0f239b6f) — sidebar tab. Render the normalized GapAnalysisData as three clearly separated, labeled sub-groups, each a titled list with its own icon and count badge:
+   - Competitor Strengths / Coverage Gaps / Underdeveloped Sections
+   Use distinct subtle color accents per sub-group. Never render raw JSON; if the normalizer returns an empty array for a group after [DONE], show a 'No data' placeholder for that specific sub-group only.
 
-3) RECOMMENDATIONS section (blockId 5ae6657d) — render the normalized RecommendationsData as an ORDERED, prioritized list of recommendation cards. Each shows a number/priority badge (reflecting final sorted order), a title/headline, and its detail/body text. If `priority` or `category` is present, surface as a colored pill. Keep it scannable with clear spacing and hover states. Never show raw JSON.
+3) RECOMMENDATIONS section (blockId 5ae6657d) — sidebar tab. Render the normalized RecommendationsData as an ORDERED, prioritized list of recommendation cards, each with a number/priority badge (reflecting final sorted order), title/headline, and detail/body text. Surface `priority`/`category` as colored pills where present. Never show raw JSON.
 
-4) COVERAGE VERIFICATION section (blockId c4bd5114) — render the normalized CoverageData as a summary/scorecard layout:
-   - overall_score shown as a prominent circular score gauge or large score badge (X/100) with color grading (red/amber/green by threshold); if null, show a neutral 'pending/no score' state instead of 0 or NaN.
-   - passed shown as a clear PASS / FAIL pill (green/red) with an icon; if null, show a neutral 'not determined' pill.
-   - summary shown as readable prose beneath the score, or a 'No summary provided' placeholder if null.
-   - criteria[] rendered as a checklist: each row with a pass/fail check or X icon, the criterion name, and any score/notes. Use a table or list with clear row separation. Never show raw JSON.
+4) COVERAGE VERIFICATION section (blockId c4bd5114) — sidebar, always-visible compact scorecard:
+   - overall_score as a circular gauge or score badge (X/100) with color grading (red/amber/green); null shows a neutral pending state, never 0 or NaN.
+   - passed as a PASS/FAIL pill (green/red); null shows a neutral 'not determined' pill.
+   - summary as short prose beneath the score, or 'No summary provided' if null.
+   - criteria[] as a compact checklist (pass/fail icon + name + score/notes), scrollable if long. Never show raw JSON.
 
 === PER-STAGE PROGRESS CHECKLIST ===
-A vertical checklist mapped from block events, shown above or beside the results:
+Sidebar, above the Coverage Verification card:
    - Analyzing gaps (gapanalysis / 0f239b6f)
    - Generating recommendations (recommendations / 5ae6657d)
    - Writing enhanced draft (enhancedarticlewriter / 88db1a98)
@@ -275,22 +296,22 @@ A vertical checklist mapped from block events, shown above or beside the results
    Each item shows pending (dim), in-progress (animated spinner/pulse), done (checkmark). A stage flips to in-progress on its first chunk and to done when the next stage begins or on [DONE]. (Theme Extractor + Competitor Research feed the status chip, not the checklist.)
 
 === STAGED REVEAL OF PANELS ===
-Render each of the four result sections the MOMENT its data starts arriving, not at the end. Cards animate in (fade/slide up) as they populate, and each section header's status pill flips pending → streaming → done. The section order stays fixed even if data arrives out of order.
+Render each result section the MOMENT its data starts arriving, not at the end. Cards/tabs animate in (fade/slide up) as they populate, and status pills flip pending → streaming → done. Layout position stays fixed per the PAGE LAYOUT spec even if data arrives out of order.
 
 === HEARTBEAT/STATUS EVENTS TO A STATUS CHIP, NOT CONTENT ===
-Detect heartbeat/progress/status/keepalive events and messages like 'This usually takes 1-2 minutes - 15s elapsed' and route them to a subtle live status chip with a pulsing dot showing current activity + a live elapsed-time counter that ticks every second on the client. NEVER render these (or [DONE]) into the article content or any result card.
+Detect heartbeat/progress/status/keepalive events and messages like 'This usually takes 1-2 minutes - 15s elapsed' and route them to the sidebar status chip with a pulsing dot + live elapsed-time counter ticking every second on the client. NEVER render these (or [DONE]) into the article content or any result card.
 
 === OPTIMISTIC UI ===
-On Enhance click: immediately disable the button, switch it to a loading state, start the elapsed-time chip and the progress checklist right away (before the first byte), and clear/reset previous results (all four sections reset to their pending/skeleton state, including resetting all accumulators and normalized data to their empty defaults). Provide a Cancel button that aborts the fetch via AbortController and restores idle state. On error, show an on-brand error card with a Retry action that re-submits the same inputs.
+On Enhance click: immediately disable the button, switch it to a loading state, start the elapsed-time chip and the progress checklist right away (before the first byte), reveal the two-column results layout in its full pending/skeleton state, and reset all accumulators/normalized data to empty defaults. Provide a Cancel button that aborts the fetch via AbortController and restores idle state (collapsing back to just the form). On error, show an on-brand error card with a Retry action that re-submits the same inputs.
 
 === INPUTS / VALIDATION ===
-Three inputs with client-side inline validation:
+Three inputs with client-side inline validation, in the centered top form card:
   - Article URL (required, valid-URL check)
   - Article Text (required, non-empty)
   - Content Type (required select: Blog Post / Landing Page / Guide / News / Product Page + an Other free-text option)
 
 === LAYOUT / THEME ===
-No header/nav/footer. Centered single-page max-width container. Considered palette: off-white background, ink-navy text, indigo/violet accent. Fonts: Space Grotesk (headings) + Inter (body). Animated gradient/progress line on the result area while streaming. Each of the four sections is a rounded card with subtle shadow, a clear section header (icon + title + status pill), consistent internal spacing, and clear visual separation between sections. Fully responsive, rounded corners, subtle shadows, visible focus states, respects prefers-reduced-motion. Clean, typed, production-quality React/TypeScript with proper component structure (one component per section) and an error boundary.
+No header/nav/footer. Off-white background, ink-navy text, indigo/violet accent. Fonts: Space Grotesk (headings) + Inter (body). Animated gradient/progress line along the top of the results area while streaming. Every card has rounded corners, subtle shadow, a clear header (icon + title + status pill/count badge), consistent internal spacing. Fully responsive per the PAGE LAYOUT breakpoints above, visible focus states, respects prefers-reduced-motion. Clean, typed, production-quality React/TypeScript with proper component structure (one component per section, plus a Tabs component shared by Gap Analysis/Recommendations) and an error boundary.
 
 === NON-GOALS ===
 No database/persistence needed — this app is stateless (do not require Neon/Prisma). No auth.

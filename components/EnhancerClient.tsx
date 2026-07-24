@@ -33,9 +33,8 @@ import { ResultCard } from '@/components/ResultCard'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ProgressChecklist } from '@/components/ProgressChecklist'
 import type { ChecklistStage } from '@/components/ProgressChecklist'
-import { GapAnalysisCard } from '@/components/GapAnalysisCard'
-import { RecommendationsCard } from '@/components/RecommendationsCard'
 import { CoverageCard } from '@/components/CoverageCard'
+import { InsightTabs } from '@/components/InsightTabs'
 
 const CONTENT_TYPES = ['Blog Post', 'Landing Page', 'Guide', 'News', 'Product Page', 'Other'] as const
 
@@ -367,24 +366,24 @@ export function EnhancerClient() {
     setCoverage(null)
     setStages({ ...INITIAL_STAGES })
     setSections({ ...INITIAL_SECTIONS })
+    setErrorMessage('')
   }
 
-  const checklistStages: ChecklistStage[] = STAGE_ORDER.map((id) => ({
+  const showResults = phase !== 'idle'
+  const checklist: ChecklistStage[] = STAGE_ORDER.map((id) => ({
     id,
     label: STAGE_LABELS[id],
     status: stages[id],
   }))
-
-  const streaming = phase === 'streaming'
+  const chipMessage = statusMessage || 'Enhancing your article…'
 
   return (
-    <div className="space-y-8">
-      <form
-        onSubmit={handleSubmit}
-        noValidate
-        className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
+    <div>
+      <section
+        aria-label="Article input"
+        className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
       >
-        <div className="space-y-5">
+        <form onSubmit={handleSubmit} noValidate className="space-y-5">
           <div>
             <label htmlFor="article-url" className="mb-1.5 block text-sm font-medium text-ink">
               Article URL
@@ -395,11 +394,15 @@ export function EnhancerClient() {
               value={articleUrl}
               onChange={(e) => setArticleUrl(e.target.value)}
               placeholder="https://example.com/post"
-              disabled={streaming}
-              aria-invalid={Boolean(errors.articleUrl)}
+              aria-invalid={errors.articleUrl ? true : undefined}
+              aria-describedby={errors.articleUrl ? 'article-url-error' : undefined}
               className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
             />
-            {errors.articleUrl && <p className="mt-1.5 text-xs text-rose-600">{errors.articleUrl}</p>}
+            {errors.articleUrl && (
+              <p id="article-url-error" className="mt-1.5 text-xs font-medium text-rose-600">
+                {errors.articleUrl}
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="article-text" className="mb-1.5 block text-sm font-medium text-ink">
@@ -407,15 +410,19 @@ export function EnhancerClient() {
             </label>
             <textarea
               id="article-text"
+              rows={8}
               value={articleText}
               onChange={(e) => setArticleText(e.target.value)}
-              rows={8}
-              placeholder="Paste the full article text here…"
-              disabled={streaming}
-              aria-invalid={Boolean(errors.articleText)}
+              placeholder="Paste your full article text here…"
+              aria-invalid={errors.articleText ? true : undefined}
+              aria-describedby={errors.articleText ? 'article-text-error' : undefined}
               className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
             />
-            {errors.articleText && <p className="mt-1.5 text-xs text-rose-600">{errors.articleText}</p>}
+            {errors.articleText && (
+              <p id="article-text-error" className="mt-1.5 text-xs font-medium text-rose-600">
+                {errors.articleText}
+              </p>
+            )}
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
@@ -426,18 +433,22 @@ export function EnhancerClient() {
                 id="content-type"
                 value={contentType}
                 onChange={(e) => setContentType(e.target.value)}
-                disabled={streaming}
-                aria-invalid={Boolean(errors.contentType)}
+                aria-invalid={errors.contentType ? true : undefined}
+                aria-describedby={errors.contentType ? 'content-type-error' : undefined}
                 className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'}`}
               >
-                <option value="">Select a content type…</option>
+                <option value="">Select a type…</option>
                 {CONTENT_TYPES.map((type) => (
                   <option key={type} value={type}>
                     {type}
                   </option>
                 ))}
               </select>
-              {errors.contentType && <p className="mt-1.5 text-xs text-rose-600">{errors.contentType}</p>}
+              {errors.contentType && (
+                <p id="content-type-error" className="mt-1.5 text-xs font-medium text-rose-600">
+                  {errors.contentType}
+                </p>
+              )}
             </div>
             {contentType === 'Other' && (
               <div>
@@ -450,63 +461,83 @@ export function EnhancerClient() {
                   value={otherType}
                   onChange={(e) => setOtherType(e.target.value)}
                   placeholder="e.g. Case study"
-                  disabled={streaming}
-                  aria-invalid={Boolean(errors.otherType)}
+                  aria-invalid={errors.otherType ? true : undefined}
+                  aria-describedby={errors.otherType ? 'other-type-error' : undefined}
                   className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
                 />
-                {errors.otherType && <p className="mt-1.5 text-xs text-rose-600">{errors.otherType}</p>}
+                {errors.otherType && (
+                  <p id="other-type-error" className="mt-1.5 text-xs font-medium text-rose-600">
+                    {errors.otherType}
+                  </p>
+                )}
               </div>
             )}
           </div>
-        </div>
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={streaming}
-            className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {streaming ? (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
-                />
-                Enhancing…
-              </>
-            ) : (
-              'Enhance article'
-            )}
-          </button>
-          {streaming && (
+          <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
-              type="button"
-              onClick={handleCancel}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:border-rose-200 hover:text-rose-600"
+              type="submit"
+              disabled={phase === 'streaming'}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Cancel
+              {phase === 'streaming' ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
+                  />
+                  Enhancing…
+                </>
+              ) : (
+                'Enhance article'
+              )}
             </button>
-          )}
-        </div>
-      </form>
+            {phase === 'streaming' && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:border-rose-200 hover:text-rose-600"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
 
-      {streaming && (
-        <StatusChip message={statusMessage || 'Enhancing your article…'} elapsedSeconds={elapsed} />
+      {showResults && phase === 'error' && (
+        <div className="mx-auto mt-10 w-full max-w-3xl">
+          <ErrorCard message={errorMessage} onRetry={handleRetry} />
+        </div>
       )}
 
-      {phase !== 'idle' && (
-        <>
-          <ProgressChecklist stages={checklistStages} />
-          {phase === 'error' ? (
-            <ErrorCard message={errorMessage} onRetry={handleRetry} />
-          ) : (
-            <div className="space-y-6">
-              <ResultCard content={content} status={sections.article} />
-              <GapAnalysisCard data={gapData} status={sections.gapanalysis} />
-              <RecommendationsCard data={recData} status={sections.recommendations} />
-              <CoverageCard data={coverage} status={sections.coverage} />
-            </div>
+      {showResults && phase !== 'error' && (
+        <div className="relative mt-12">
+          {phase === 'streaming' && (
+            <div className="gradient-line absolute inset-x-0 -top-5 h-1 rounded-full" aria-hidden="true" />
           )}
-        </>
+          <div className="mb-6 space-y-4 lg:hidden">
+            {phase === 'streaming' && <StatusChip message={chipMessage} elapsedSeconds={elapsed} />}
+            <ProgressChecklist stages={checklist} />
+          </div>
+          <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[1fr_380px]">
+            <div className="min-w-0">
+              <ResultCard content={content} status={sections.article} />
+            </div>
+            <aside className="min-w-0 space-y-6 self-start lg:sticky lg:top-6">
+              <div className="hidden space-y-4 lg:block">
+                {phase === 'streaming' && <StatusChip message={chipMessage} elapsedSeconds={elapsed} />}
+                <ProgressChecklist stages={checklist} />
+              </div>
+              <CoverageCard data={coverage} status={sections.coverage} />
+              <InsightTabs
+                gapData={gapData}
+                gapStatus={sections.gapanalysis}
+                recData={recData}
+                recStatus={sections.recommendations}
+              />
+            </aside>
+          </div>
+        </div>
       )}
     </div>
   )

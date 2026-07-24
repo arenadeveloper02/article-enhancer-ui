@@ -6,6 +6,7 @@ type GapEntry = string | { title: string; detail?: string }
 interface GapAnalysisCardProps {
   data: GapAnalysisData | null
   status: SectionStatus
+  embedded?: boolean
 }
 
 interface SubGroupProps {
@@ -54,7 +55,7 @@ function SubGroup({ title, icon, items, done, dotClass, badgeClass }: SubGroupPr
   )
 }
 
-export function GapAnalysisCard({ data, status }: GapAnalysisCardProps) {
+export function GapAnalysisCard({ data, status, embedded = false }: GapAnalysisCardProps) {
   const showSkeleton = data === null && status !== 'done'
   const strengths: GapEntry[] = data ? data.competitor_strengths : []
   const gaps: GapEntry[] = data ? data.coverage_gaps : []
@@ -63,7 +64,11 @@ export function GapAnalysisCard({ data, status }: GapAnalysisCardProps) {
   return (
     <section
       aria-label="Gap analysis"
-      className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
+      className={
+        embedded
+          ? ''
+          : 'card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8'
+      }
     >
       <SectionHeader title="Gap Analysis" icon="▦" status={status} />
       {showSkeleton ? (
