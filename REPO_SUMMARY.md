@@ -1,24 +1,23 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-24T06:32:09.862Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-24T06:54:36.590Z.
 
 ## Overview
 
-Article Enhancer Agent — submit an article to an SEO enhancement pipeline and watch live streaming results in a two-column layout with a sticky insights sidebar, tabbed Gap Analysis/Recommendations, and an always-visible coverage scorecard.
+Article Enhancer Agent — submits an article to an SEO enhancement pipeline and renders live streaming results (enhanced article, gap analysis, recommendations, coverage verification) in a polished two-column UI.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 33
 
 ## Features
 
-- Live SSE streaming of enhanced article markdown with blinking caret and live word count
-- Two-column results layout: wide article column + sticky sidebar (status chip, progress checklist, coverage scorecard, tabbed insights)
-- Tabbed Gap Analysis / Recommendations card with count badges and live pulsing dots per tab
-- Compact coverage verification scorecard with circular score badge, pass/fail pill, and scrollable criteria list
-- Per-stage progress checklist driven by blockId routing
-- Heartbeat/status events routed to a status chip with live elapsed timer
-- Optimistic UI with Cancel (AbortController) and Retry on error
-- Defensive normalizers for all JSON panels with unicode-escape decoding
+- Server-side streaming proxy at /api/enhance with hardcoded API key (never exposed to client)
+- SSE consumption with blockId-prefix routing, [DONE] sentinel handling, and heartbeat status chip
+- Live-typed Markdown enhanced article with copy button, word count, and blinking caret
+- Normalized Gap Analysis, Recommendations, and Coverage Verification panels via shared lib/normalize.ts
+- Two-column responsive layout with sticky sidebar, tabbed Gap Analysis / Recommendations card
+- Per-stage progress checklist, optimistic UI with cancel/retry, skeleton and empty states
+- Non-blocking Prisma request logging (EnhancementLog) against existing Neon Postgres
 
 ## Tech Stack
 
@@ -131,7 +130,7 @@ Article Enhancer Agent — submit an article to an SEO enhancement pipeline and 
 
 ## Latest Change
 
-- **Updated at:** 2026-07-24T06:32:09.862Z
+- **Updated at:** 2026-07-24T06:54:36.590Z
 - **Request:** Generate a production-quality Next.js (App Router, TypeScript) single-page web app called "Article Enhancer" that submits an article to an SEO enhancement pipeline and renders the LIVE streaming results with a polished, interactive UX. Implement ALL of the following exactly.
 
 === SERVER ROUTE: app/api/enhance/route.ts ===
