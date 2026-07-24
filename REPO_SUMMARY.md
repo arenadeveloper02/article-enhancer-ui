@@ -1,23 +1,22 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-24T06:54:36.590Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-24T06:55:31.508Z.
 
 ## Overview
 
-Article Enhancer Agent — submits an article to an SEO enhancement pipeline and renders live streaming results (enhanced article, gap analysis, recommendations, coverage verification) in a polished two-column UI.
+Article Enhancer Agent — paste an article, pick a content type, and watch an AI SEO enhancement pipeline stream live results: an enhanced Markdown article, gap analysis, prioritized recommendations, and a coverage verification scorecard.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 33
 
 ## Features
 
-- Server-side streaming proxy at /api/enhance with hardcoded API key (never exposed to client)
-- SSE consumption with blockId-prefix routing, [DONE] sentinel handling, and heartbeat status chip
-- Live-typed Markdown enhanced article with copy button, word count, and blinking caret
-- Normalized Gap Analysis, Recommendations, and Coverage Verification panels via shared lib/normalize.ts
-- Two-column responsive layout with sticky sidebar, tabbed Gap Analysis / Recommendations card
-- Per-stage progress checklist, optimistic UI with cancel/retry, skeleton and empty states
-- Non-blocking Prisma request logging (EnhancementLog) against existing Neon Postgres
+- Streaming SSE proxy at /api/enhance with server-side API key and pass-through ReadableStream piping
+- Live token-by-token Markdown rendering of the enhanced article with blinking caret, copy button, and live word count
+- BlockId-prefix routing of stream chunks to Gap Analysis, Recommendations, Enhanced Article, and Coverage panels with unknown-block fallback classification
+- Defensive normalizers in lib/normalize.ts (balanced-JSON extraction, unicode-escape decoding, type coercion, never-throw defaults)
+- Two-column responsive layout: wide article column plus sticky sidebar with status chip, progress checklist, compact coverage scorecard, and tabbed Gap Analysis / Recommendations
+- Optimistic UI with elapsed timer, per-stage checklist, cancel via AbortController, retry on error, and heartbeat messages routed to a status chip
 
 ## Tech Stack
 
@@ -130,7 +129,7 @@ Article Enhancer Agent — submits an article to an SEO enhancement pipeline and
 
 ## Latest Change
 
-- **Updated at:** 2026-07-24T06:54:36.590Z
+- **Updated at:** 2026-07-24T06:55:31.508Z
 - **Request:** Generate a production-quality Next.js (App Router, TypeScript) single-page web app called "Article Enhancer" that submits an article to an SEO enhancement pipeline and renders the LIVE streaming results with a polished, interactive UX. Implement ALL of the following exactly.
 
 === SERVER ROUTE: app/api/enhance/route.ts ===
