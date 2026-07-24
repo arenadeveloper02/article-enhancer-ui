@@ -1,49 +1,123 @@
-import type { CoverageData } from '@/lib/types'
+import type { CoverageData, SectionStatus } from '@/lib/types'
+import { SectionHeader } from '@/components/SectionHeader'
 
 interface CoverageCardProps {
-  data: CoverageData
+  data: CoverageData | null
+  status: SectionStatus
 }
 
-export function CoverageCard({ data }: CoverageCardProps) {
+function scoreClasses(score: number): string {
+  if (score >= 80) return 'border-emerald-300 bg-emerald-50 text-emerald-700'
+  if (score >= 60) return 'border-amber-300 bg-amber-50 text-amber-700'
+  return 'border-rose-300 bg-rose-50 text-rose-700'
+}
+
+export function CoverageCard({ data, status }: CoverageCardProps) {
+  const showSkeleton = data === null && status !== 'done'
   return (
     <section
       aria-label="Coverage verification"
       className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-lg font-semibold text-ink">Coverage Verification</h2>
-        <div className="flex items-center gap-3">
-          {data.passed !== null && (
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                data.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-              }`}
-            >
-              {data.passed ? 'Passed' : 'Needs work'}
-            </span>
-          )}
-          {data.overallScore !== null && (
-            <span
-              aria-label={`Overall score ${Math.round(data.overallScore)}`}
-              className="inline-flex h-12 w-12 items-center justify-center rounded-full border-4 border-indigo-100 bg-indigo-50 font-display text-sm font-bold text-accent"
-            >
-              {Math.round(data.overallScore)}
-            </span>
-          )}
+      <SectionHeader title="Coverage Verification" icon="✔" status={status} />
+      {showSkeleton ? (
+        <div className="flex items-center gap-5" aria-hidden="true">
+          <div className="skeleton-bar h-20 w-20 shrink-0 rounded-full bg-slate-100" />
+          <div className="flex-1 space-y-3">
+            <div className="skeleton-bar h-4 w-1/4 rounded-lg bg-slate-100" />
+            <div className="skeleton-bar h-4 w-full rounded-lg bg-slate-100" />
+            <div className="skeleton-bar h-4 w-2/3 rounded-lg bg-slate-100" />
+          </div>
         </div>
-      </div>
-      {data.summary && <p className="mt-4 text-sm leading-relaxed text-ink-soft">{data.summary}</p>}
-      {data.criteria.length > 0 && (
-        <div className="mt-5">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Criteria</h3>
-          <ul className="space-y-2">
-            {data.criteria.map((item, index) => (
-              <li key={index} className="flex items-start gap-2 text-sm leading-relaxed text-ink">
-                <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+      ) : data === null ? (
+        <p className="text-sm italic text-slate-400">No data</p>
+      ) : (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center gap-5">
+            {data.overall_score !== null ? (
+              <div
+                aria-label={`Overall score ${Math.round(data.overall_score)} out of 100`}
+                className={`flex h-20 w-20 shrink-0 flex-col items-center justify-center rounded-full border-4 ${scoreClasses(data.overall_score)}`}
+              >
+                <span className="font-display text-xl font-bold leading-none">
+                  {Math.round(data.overall_score)}
+                </span>
+                <span className="mt-0.5 text-[10px] font-semibold uppercase opacity-70">/ 100</span>
+              </div>
+            ) : (
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-4 border-slate-200 bg-slate-50 text-center text-[11px] font-medium leading-tight text-slate-400">
+                No score yet
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              {data.passed === true && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  ✓ Pass
+                </span>
+              )}
+              {data.passed === false && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+                  ✗ Fail
+                </span>
+              )}
+              {data.passed === null && (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                  Not determined
+                </span>
+              )}
+              <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+                {data.summary ?? 'No summary provided'}
+              </p>
+            </div>
+          </div>
+          {data.criteria.length > 0 ? (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Criteria</h3>
+              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100">
+                {data.criteria.map((item, index) => (
+                  <li key={index} className="flex items-start gap-3 px-4 py-3">
+                    {item.passed === true ? (
+                      <span
+                        aria-hidden="true"
+                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-600"
+                      >
+                        ✓
+                      </span>
+                    ) : item.passed === false ? (
+                      <span
+                        aria-hidden="true"
+                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-100 text-[11px] font-bold text-rose-600"
+                      >
+                        ✗
+                      </span>
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-400"
+                      >
+                        –
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-ink">{item.name}</span>
+                        {typeof item.score === 'number' && (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600">
+                            {Math.round(item.score)}
+                          </span>
+                        )}
+                      </div>
+                      {item.notes ? (
+                        <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">{item.notes}</p>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : status === 'done' ? (
+            <p className="text-sm italic text-slate-400">No criteria provided</p>
+          ) : null}
         </div>
       )}
     </section>

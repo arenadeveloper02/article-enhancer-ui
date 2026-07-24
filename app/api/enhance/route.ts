@@ -5,18 +5,18 @@ export const runtime = 'nodejs'
 
 const UPSTREAM_URL =
   'https://test-agent.thearena.ai/api/workflows/9aafe5d7-1d24-477a-ad3f-0be9bf79c04f/execute'
-const SIM_API_KEY = 'sk-sim-T8eEbhp_o3qI01OEp5Ok_VdiwR4Q6Fht'
+const SIM_API_KEY = 'sk-sim-jYKjvV7VAToCX_MNfI00-2sGNmcyDZAS'
 
 const SELECTED_OUTPUTS = [
   'recommendations.recommendations',
   'enhancedarticlewriter.content',
   'coverageverifier.criteria',
-  'gapanalysis.competitor_strengths',
-  'gapanalysis.coverage_gaps',
-  'gapanalysis.underdeveloped_sections',
   'coverageverifier.overall_score',
   'coverageverifier.passed',
   'coverageverifier.summary',
+  'gapanalysis.competitor_strengths',
+  'gapanalysis.coverage_gaps',
+  'gapanalysis.underdeveloped_sections',
 ]
 
 interface IncomingBody {
@@ -75,19 +75,20 @@ export async function POST(request: Request): Promise<Response> {
 
   if (!upstream.ok) {
     const detail = await upstream.text().catch(() => '')
+    const status = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502
     return Response.json(
       {
         error: `The enhancement service returned an error (${upstream.status}).`,
         detail: detail.slice(0, 500),
       },
-      { status: 502 },
+      { status },
     )
   }
 
   const upstreamContentType = upstream.headers.get('content-type') ?? ''
 
   // Non-streamed JSON fallback — forward the JSON body as-is.
-  if (upstreamContentType.includes('application/json') && upstream.body === null) {
+  if (upstreamContentType.includes('application/json')) {
     const text = await upstream.text()
     return new Response(text, {
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -101,10 +102,10 @@ export async function POST(request: Request): Promise<Response> {
     })
   }
 
-  // Pipe the upstream stream straight through — never buffer the whole body.
+  // Pipe the upstream ReadableStream straight through — never buffer the whole body.
   return new Response(upstream.body, {
     headers: {
-      'Content-Type': upstreamContentType || 'text/event-stream; charset=utf-8',
+      'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',

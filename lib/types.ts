@@ -1,5 +1,9 @@
 export type RequestPhase = 'idle' | 'streaming' | 'done' | 'error'
 
+export type SectionStatus = 'pending' | 'streaming' | 'done'
+
+export type PanelKey = 'article' | 'gapanalysis' | 'recommendations' | 'coverage'
+
 export interface EnhanceFormErrors {
   articleUrl?: string
   articleText?: string
@@ -23,26 +27,36 @@ export interface StageItem {
   status: StageStatus
 }
 
-export type SelectedOutputKey =
-  | 'recommendations.recommendations'
-  | 'enhancedarticlewriter.content'
-  | 'coverageverifier.criteria'
-  | 'gapanalysis.competitor_strengths'
-  | 'gapanalysis.coverage_gaps'
-  | 'gapanalysis.underdeveloped_sections'
-  | 'coverageverifier.overall_score'
-  | 'coverageverifier.passed'
-  | 'coverageverifier.summary'
-
+// Gap Analysis (blockId 0f239b6f) — snake_case keys are FINAL, matching the API contract.
 export interface GapAnalysisData {
-  competitorStrengths: string[]
-  coverageGaps: string[]
-  underdevelopedSections: string[]
+  competitor_strengths: string[] | { title: string; detail?: string }[]
+  coverage_gaps: string[] | { title: string; detail?: string }[]
+  underdeveloped_sections: string[] | { title: string; detail?: string }[]
+}
+
+// Recommendations (blockId 5ae6657d)
+export interface RecommendationItem {
+  title: string
+  detail: string
+  priority?: 'high' | 'medium' | 'low' | string | null
+  category?: string | null
+}
+
+export interface RecommendationsData {
+  recommendations: RecommendationItem[]
+}
+
+// Coverage Verification (blockId c4bd5114)
+export interface CriteriaItem {
+  name: string
+  passed: boolean | null
+  score?: number | null
+  notes?: string | null
 }
 
 export interface CoverageData {
-  overallScore: number | null
+  overall_score: number | null
   passed: boolean | null
-  summary: string
-  criteria: string[]
+  summary: string | null
+  criteria: CriteriaItem[]
 }
