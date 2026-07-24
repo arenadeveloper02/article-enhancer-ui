@@ -1,3 +1,6 @@
+"use client"
+
+import { useState } from 'react'
 import type { CoverageData, SectionStatus } from '@/lib/types'
 import { SectionHeader } from '@/components/SectionHeader'
 
@@ -14,6 +17,20 @@ function scoreClasses(score: number): string {
 }
 
 export function CoverageCard({ data, status, embedded = false }: CoverageCardProps) {
+  const [expandedJustifications, setExpandedJustifications] = useState<Set<number>>(new Set())
+
+  function toggleJustification(index: number): void {
+    setExpandedJustifications((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
+
   const showSkeleton = data === null && status !== 'done' && status !== 'empty'
   return (
     <section
@@ -112,7 +129,33 @@ export function CoverageCard({ data, status, embedded = false }: CoverageCardPro
                           )}
                         </div>
                         {item.notes ? (
-                          <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">{item.notes}</p>
+                          <div className="mt-1">
+                            <button
+                              type="button"
+                              onClick={() => toggleJustification(index)}
+                              aria-expanded={expandedJustifications.has(index)}
+                              className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-accent transition hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+                            >
+                              <svg
+                                viewBox="0 0 16 16"
+                                aria-hidden="true"
+                                className={`h-3 w-3 transition-transform motion-reduce:transition-none ${
+                                  expandedJustifications.has(index) ? 'rotate-90' : ''
+                                }`}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M6 4l4 4-4 4" />
+                              </svg>
+                              Justification
+                            </button>
+                            {expandedJustifications.has(index) && (
+                              <p className="mt-1 text-xs leading-relaxed text-ink-soft">{item.notes}</p>
+                            )}
+                          </div>
                         ) : null}
                       </div>
                     </li>

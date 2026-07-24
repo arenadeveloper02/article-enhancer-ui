@@ -322,9 +322,9 @@ export function EnhancerClient() {
       } else if (target === 'coverage') {
         covObj[shortKey] = value
       } else if (target === 'recommendations') {
-        recValue = recValue === undefined ? value : recValue
+        recValue = value
       } else if (target === 'article') {
-        articleValue = articleValue === undefined ? value : articleValue
+        articleValue = value
       }
     }
     if (Object.keys(gapObj).length > 0) {
@@ -365,139 +365,118 @@ export function EnhancerClient() {
     }
   }
 
-  function handleJsonFallback(json: unknown): void {
-    const record = asRecord(json)
-    if (!record) return
-    const output = asRecord(record.output) ?? asRecord(record.data) ?? record
-    applyFinalOutputs(output)
-    if (!dataPresentRef.current.article) {
-      const text = extractArticleContent(output)
-      if (text.trim()) {
-        targetAccumRef.current.article = text
-        dataPresentRef.current.article = true
-        setContent(decodeUnicodeEscapes(text))
-      }
+  function routeUnknownText(text: string): void {
+    const key = '__unknown'
+    const cached = blockTargetRef.current[key]
+    if (cached) {
+      routeToPanel(cached, text)
+      return
+    }
+    blockAccumRef.current[key] = (blockAccumRef.current[key] ?? '') + text
+    const classified = classifyUnknownPayload(blockAccumRef.current[key])
+    if (classified) {
+      blockTargetRef.current[key] = classified
+      routeToPanel(classified, blockAccumRef.current[key])
     }
   }
 
-  function handleChunk(blockId: string, text: string): void {
-    if (!text) return
+  function handleStreamEvent(payload: unknown): void {
+    const record = asRecord(payload)
+    if (!record) return
+    const finalOutput = asRecord(record.output) ?? asRecord(record.result)
+    if (finalOutput) {
+      applyFinalOutputs(finalOutput)
+      return
+    }
+    const message =
+      typeof record.message === 'string'
+        ? record.message
+        : typeof record.status === 'string'
+          ? record.status
+          : ''
+    if (message && isHeartbeatMessage(message)) {
+      setStatusMessage(message.trim())
+      return
+    }
+    const blockId =
+      typeof record.blockId === 'string'
+        ? record.blockId
+        : typeof record.block_id === 'string'
+          ? record.block_id
+          : typeof record.blockName === 'string'
+            ? record.blockName
+            : ''
+    const chunk =
+      typeof record.chunk === 'string'
+        ? record.chunk
+        : typeof record.content === 'string'
+          ? record.content
+          : typeof record.data === 'string'
+            ? record.data
+            : ''
+    if (!chunk) return
+    if (!blockId) {
+      if (isHeartbeatMessage(chunk)) {
+        setStatusMessage(chunk.trim())
+      } else {
+        routeUnknownText(chunk)
+      }
+      return
+    }
+    const cached = blockTargetRef.current[blockId]
+    if (cached) {
+      routeToPanel(cached, chunk)
+      return
+    }
     const target = resolveBlockTarget(blockId)
     if (target === 'status-theme' || target === 'status-research') {
       setStatusMessage(statusLabelFor(target))
       return
     }
-    if (target !== null) {
-      routeToPanel(target, text)
+    if (target) {
+      blockTargetRef.current[blockId] = target
+      routeToPanel(target, chunk)
       return
     }
-    const key = blockId || '__unknown__'
-    const assigned: PanelKey | undefined = blockTargetRef.current[key]
-    if (assigned !== undefined) {
-      routeToPanel(assigned, text)
-      return
-    }
-    blockAccumRef.current[key] = (blockAccumRef.current[key] ?? '') + text
-    const accumulated = blockAccumRef.current[key]
-    if (isHeartbeatMessage(accumulated)) {
-      setStatusMessage(accumulated.trim())
-      return
-    }
-    const classified = classifyUnknownPayload(accumulated)
-    if (classified !== null) {
-      blockTargetRef.current[key] = classified
-      routeToPanel(classified, accumulated)
-      blockAccumRef.current[key] = ''
+    blockAccumRef.current[blockId] = (blockAccumRef.current[blockId] ?? '') + chunk
+    const classified = classifyUnknownPayload(blockAccumRef.current[blockId])
+    if (classified) {
+      blockTargetRef.current[blockId] = classified
+      routeToPanel(classified, blockAccumRef.current[blockId])
     }
   }
 
-  function processEvent(payload: string): void {
-    const trimmed = payload.trim()
-    if (!trimmed) return
-    if (trimmed === '[DONE]' || trimmed === 'DONE') {
-      finishRun()
+  function processLine(rawLine: string): void {
+    const line = rawLine.trim()
+    if (!line || !line.startsWith('data:')) return
+    const data = line.slice(5).trim()
+    if (!data) return
+    if (data === '[DONE]') {
+      doneRef.current = true
       return
     }
     let parsed: unknown
     try {
-      parsed = JSON.parse(trimmed)
+      parsed = JSON.parse(data)
     } catch {
+      if (!isHeartbeatMessage(data)) routeUnknownText(data)
       return
     }
-    const record = asRecord(parsed)
-    if (!record) return
-    const data = asRecord(record.data) ?? record
-    const output = asRecord(data.output) ?? asRecord(record.output)
-    if (output) {
-      applyFinalOutputs(output)
-      return
-    }
-    const blockId =
-      typeof data.blockId === 'string'
-        ? data.blockId
-        : typeof data.block_id === 'string'
-          ? data.block_id
-          : typeof data.blockName === 'string'
-            ? data.blockName
-            : ''
-    const chunkValue = data.chunk ?? data.content ?? data.text ?? data.delta
-    if (typeof chunkValue === 'string' && chunkValue) {
-      handleChunk(blockId, chunkValue)
-    }
-  }
-
-  function handleLine(rawLine: string): void {
-    const line = rawLine.trim()
-    if (!line) return
-    if (line.startsWith('data:')) {
-      processEvent(line.slice(5))
-      return
-    }
-    if (line.startsWith('{') || line === '[DONE]') {
-      processEvent(line)
-    }
+    handleStreamEvent(parsed)
   }
 
   function finishRun(): void {
-    if (doneRef.current) return
-    doneRef.current = true
-
-    const articleFinal = decodeUnicodeEscapes(targetAccumRef.current.article)
-    const gapText = targetAccumRef.current.gapanalysis
-    const recText = targetAccumRef.current.recommendations
-    const covText = targetAccumRef.current.coverage
-
-    let finalGap = gapRef.current
-    if (finalGap === null && gapText.trim()) finalGap = normalizeGapAnalysis(gapText)
-    let finalRec = recRef.current
-    if (finalRec === null && recText.trim()) finalRec = normalizeRecommendations(recText)
-    let finalCov = covRef.current
-    if (finalCov === null && covText.trim()) finalCov = normalizeCoverage(covText)
-
-    gapRef.current = finalGap
-    recRef.current = finalRec
-    covRef.current = finalCov
-    setGapData(finalGap)
-    setRecData(finalRec)
-    setCoverage(finalCov)
-
-    const articleEmpty = !articleFinal.trim()
-    const gapEmpty = finalGap === null || isGapAnalysisEmpty(finalGap)
-    const recEmpty = finalRec === null || isRecommendationsEmpty(finalRec)
-    const covEmpty = finalCov === null || isCoverageEmpty(finalCov)
-
-    setContent(articleFinal)
-    setSections({
-      article: articleEmpty ? 'empty' : 'done',
-      gapanalysis: gapEmpty ? 'empty' : 'done',
-      recommendations: recEmpty ? 'empty' : 'done',
-      coverage: covEmpty ? 'empty' : 'done',
+    setSections((prev) => {
+      const next = { ...prev }
+      for (const key of Object.keys(next) as PanelKey[]) {
+        next[key] = dataPresentRef.current[key] ? 'done' : 'empty'
+      }
+      return next
     })
-    setStages({
-      gapanalysis: 'done',
-      recommendations: 'done',
-      enhancedarticlewriter: 'done',
-      coverageverifier: 'done',
+    setStages(() => {
+      const next: Record<StageId, StageStatus> = { ...INITIAL_STAGES }
+      for (const id of STAGE_ORDER) next[id] = 'done'
+      return next
     })
     setStatusMessage('')
     setPhase('done')
@@ -505,42 +484,35 @@ export function EnhancerClient() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
-    if (phase === 'streaming') return
     if (!validate()) return
-
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
-
-    setPhase('streaming')
-    setContent('')
-    setErrorMessage('')
-    setStatusMessage('Contacting enhancement agent…')
-    setElapsed(0)
-    setStages({ ...INITIAL_STAGES })
-    setSections({ ...INITIAL_SECTIONS })
-    setGapData(null)
-    setRecData(null)
-    setCoverage(null)
+    doneRef.current = false
     targetAccumRef.current = { article: '', gapanalysis: '', recommendations: '', coverage: '' }
     blockAccumRef.current = {}
     blockTargetRef.current = {}
     gapRef.current = null
     recRef.current = null
     covRef.current = null
-    dataPresentRef.current = {
-      article: false,
-      gapanalysis: false,
-      recommendations: false,
-      coverage: false,
-    }
-    doneRef.current = false
+    dataPresentRef.current = { article: false, gapanalysis: false, recommendations: false, coverage: false }
+    setContent('')
+    setGapData(null)
+    setRecData(null)
+    setCoverage(null)
+    setStages({ ...INITIAL_STAGES })
+    setSections({ ...INITIAL_SECTIONS })
+    setErrorMessage('')
+    setStatusMessage('Contacting enhancement agent…')
+    setElapsed(0)
     startRef.current = Date.now()
+    setPhase('streaming')
 
+    const resolvedType = contentType === 'Other' ? otherType.trim() : contentType
     const payload: EnhancePayload = {
       article_url: articleUrl.trim(),
       article_text: articleText.trim(),
-      content_type: contentType === 'Other' ? otherType.trim() : contentType,
+      content_type: resolvedType,
     }
 
     try {
@@ -550,67 +522,69 @@ export function EnhancerClient() {
         body: JSON.stringify(payload),
         signal: controller.signal,
       })
-
       if (!response.ok) {
         let message = `Request failed with status ${response.status}.`
         try {
-          const errBody = (await response.json()) as { error?: unknown }
+          const errBody = (await response.json()) as { error?: string }
           if (typeof errBody.error === 'string' && errBody.error) message = errBody.error
         } catch {
           // keep default message
         }
         throw new Error(message)
       }
-
-      const responseType = response.headers.get('content-type') ?? ''
-      if (responseType.includes('application/json')) {
+      const respContentType = response.headers.get('content-type') ?? ''
+      if (respContentType.includes('application/json')) {
         const json = (await response.json()) as unknown
-        handleJsonFallback(json)
+        const record = asRecord(json)
+        if (record) {
+          const output = asRecord(record.output) ?? record
+          applyFinalOutputs(output)
+          const article = extractArticleContent(output)
+          if (article.trim() && !dataPresentRef.current.article) {
+            targetAccumRef.current.article = article
+            dataPresentRef.current.article = true
+            setContent(decodeUnicodeEscapes(article))
+          }
+        }
         finishRun()
         return
       }
-
       if (!response.body) {
         throw new Error('The enhancement service returned an empty response.')
       }
-
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       for (;;) {
-        const { done, value } = await reader.read()
+        const { value, done } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-        let newlineIndex = buffer.indexOf('\n')
-        while (newlineIndex !== -1) {
-          const line = buffer.slice(0, newlineIndex)
-          buffer = buffer.slice(newlineIndex + 1)
-          handleLine(line)
-          newlineIndex = buffer.indexOf('\n')
-        }
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) processLine(line)
+        if (doneRef.current) break
       }
-      handleLine(buffer)
+      if (buffer.trim() && !doneRef.current) processLine(buffer)
       finishRun()
     } catch (err) {
       if (controller.signal.aborted) return
       setPhase('error')
-      setStatusMessage('')
       setErrorMessage(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Something went wrong while enhancing the article. Please try again.',
+        err instanceof Error && err.message ? err.message : 'Something went wrong. Please try again.',
       )
     }
   }
 
   function handleRetry(): void {
-    abortRef.current?.abort()
     setPhase('idle')
     setErrorMessage('')
   }
 
   function handleExport(): void {
-    const html = buildPrintableHtml(content, gapData, recData, coverage)
+    const articleSource = targetAccumRef.current.article
+      ? decodeUnicodeEscapes(targetAccumRef.current.article)
+      : content
+    const html = buildPrintableHtml(articleSource, gapRef.current, recRef.current, covRef.current)
     const win = window.open('', '_blank')
     if (!win) return
     win.document.write(html)
@@ -628,12 +602,15 @@ export function EnhancerClient() {
   const showResults = phase === 'streaming' || phase === 'done'
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start">
+    <div className="grid gap-8 lg:grid-cols-[400px,1fr] lg:items-start">
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(e) => {
+          void handleSubmit(e)
+        }}
         noValidate
         className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-7"
       >
+        <h2 className="mb-5 font-display text-lg font-semibold text-ink">Your article</h2>
         <div className="space-y-5">
           <div>
             <label htmlFor="article-url" className="mb-1.5 block text-sm font-medium text-ink">
@@ -643,14 +620,14 @@ export function EnhancerClient() {
               id="article-url"
               type="url"
               value={articleUrl}
-              onChange={(event) => setArticleUrl(event.target.value)}
+              onChange={(e) => setArticleUrl(e.target.value)}
               placeholder="https://example.com/post"
               disabled={phase === 'streaming'}
               aria-invalid={errors.articleUrl ? true : undefined}
               className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
             />
             {errors.articleUrl ? (
-              <p className="mt-1.5 text-xs text-rose-600">{errors.articleUrl}</p>
+              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleUrl}</p>
             ) : null}
           </div>
           <div>
@@ -660,15 +637,15 @@ export function EnhancerClient() {
             <textarea
               id="article-text"
               value={articleText}
-              onChange={(event) => setArticleText(event.target.value)}
-              placeholder="Paste the full article text here…"
+              onChange={(e) => setArticleText(e.target.value)}
               rows={10}
+              placeholder="Paste the full article text here…"
               disabled={phase === 'streaming'}
               aria-invalid={errors.articleText ? true : undefined}
               className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
             />
             {errors.articleText ? (
-              <p className="mt-1.5 text-xs text-rose-600">{errors.articleText}</p>
+              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleText}</p>
             ) : null}
           </div>
           <div>
@@ -678,7 +655,7 @@ export function EnhancerClient() {
             <select
               id="content-type"
               value={contentType}
-              onChange={(event) => setContentType(event.target.value)}
+              onChange={(e) => setContentType(e.target.value)}
               disabled={phase === 'streaming'}
               aria-invalid={errors.contentType ? true : undefined}
               className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'}`}
@@ -691,10 +668,10 @@ export function EnhancerClient() {
               ))}
             </select>
             {errors.contentType ? (
-              <p className="mt-1.5 text-xs text-rose-600">{errors.contentType}</p>
+              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.contentType}</p>
             ) : null}
           </div>
-          {contentType === 'Other' && (
+          {contentType === 'Other' ? (
             <div>
               <label htmlFor="other-type" className="mb-1.5 block text-sm font-medium text-ink">
                 Describe your content type
@@ -703,17 +680,17 @@ export function EnhancerClient() {
                 id="other-type"
                 type="text"
                 value={otherType}
-                onChange={(event) => setOtherType(event.target.value)}
-                placeholder="e.g. Comparison review"
+                onChange={(e) => setOtherType(e.target.value)}
+                placeholder="e.g. Case Study"
                 disabled={phase === 'streaming'}
                 aria-invalid={errors.otherType ? true : undefined}
                 className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
               />
               {errors.otherType ? (
-                <p className="mt-1.5 text-xs text-rose-600">{errors.otherType}</p>
+                <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.otherType}</p>
               ) : null}
             </div>
-          )}
+          ) : null}
           <button
             type="submit"
             disabled={phase === 'streaming'}
@@ -723,53 +700,51 @@ export function EnhancerClient() {
           </button>
         </div>
       </form>
-
-      <div className="min-w-0 space-y-4">
-        {phase === 'streaming' && (
-          <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
-        )}
-        {showResults && <ProgressChecklist stages={checklistStages} />}
-        {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
-        {showResults && (
-          <ResultTabs
-            content={content}
-            articleStatus={sections.article}
-            coverageData={coverage}
-            coverageStatus={sections.coverage}
-            gapData={gapData}
-            gapStatus={sections.gapanalysis}
-            recData={recData}
-            recStatus={sections.recommendations}
-          />
-        )}
-        {phase === 'done' && (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={handleExport}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep"
-            >
-              Export printable version
-            </button>
-          </div>
-        )}
+      <div className="min-w-0 space-y-5">
         {phase === 'idle' && (
           <section
-            aria-label="Results placeholder"
-            className="card-enter flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 p-8 text-center"
+            aria-label="Getting started"
+            className="card-enter flex min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center"
           >
-            <span
-              aria-hidden="true"
-              className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-xl"
-            >
+            <span aria-hidden="true" className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-xl">
               ✍
             </span>
-            <h2 className="font-display text-lg font-semibold text-ink">Results appear here</h2>
+            <h2 className="font-display text-lg font-semibold text-ink">Ready when you are</h2>
             <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
-              Submit an article and watch the enhanced version, gap analysis, recommendations, and
-              coverage verification stream in live.
+              Fill in your article details and the enhanced version, gap analysis, recommendations,
+              and coverage verification will stream in live here.
             </p>
           </section>
+        )}
+        {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
+        {showResults && (
+          <>
+            {phase === 'streaming' && (
+              <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
+            )}
+            <ProgressChecklist stages={checklistStages} />
+            <ResultTabs
+              content={content}
+              articleStatus={sections.article}
+              coverageData={coverage}
+              coverageStatus={sections.coverage}
+              gapData={gapData}
+              gapStatus={sections.gapanalysis}
+              recData={recData}
+              recStatus={sections.recommendations}
+            />
+            {phase === 'done' && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep"
+                >
+                  Export printable version
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

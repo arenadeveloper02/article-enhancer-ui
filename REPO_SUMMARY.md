@@ -1,6 +1,6 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-24T07:41:05.346Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-24T08:00:17.179Z.
 
 ## Overview
 
@@ -11,11 +11,10 @@ Paste an article, pick a content type, and watch an AI agent enhance it live wit
 
 ## Features
 
-- Streaming enhanced article output with live Markdown rendering
-- Gap analysis panel populated from streamed and final workflow outputs
-- Coverage verification panel with overall score, pass/fail, and criteria
-- Prioritized recommendations list
-- Pipeline progress checklist and live status chip
+- Streaming article enhancement with live Markdown rendering
+- Gap analysis and recommendations panels
+- Coverage verification with per-criterion score and expandable justification
+- Pipeline progress checklist
 - Printable export of all results
 
 ## Tech Stack
@@ -131,7 +130,7 @@ Paste an article, pick a content type, and watch an AI agent enhance it live wit
 
 ## Latest Change
 
-- **Updated at:** 2026-07-24T07:41:05.346Z
+- **Updated at:** 2026-07-24T08:00:17.179Z
 - **Request:** === SCOPE LOCK: BUG-FIX-ONLY MODE ===
 This is a bug-fix request, not a redesign request. Apply ONLY the specific fix(es) described below. Do not use this as an opportunity to also improve, refactor, reposition, restyle, resize, reorder, rename, or "clean up" anything else in the app, even if you notice something else that looks improvable while you're in there.
 
@@ -145,7 +144,5 @@ Hard rules for this change:
 
 Bug(s) to fix in this change (and ONLY these):
 
-1. coverage verifictaion
-2. gap analysis data is showing empty
-
-We need to fix that
+- Inside the coverage verification page, currently its showing name and score. Can we also show the Justification as wel?
+Justification can show only if the user wants to see . Give a small cursor which can be expand and collapse

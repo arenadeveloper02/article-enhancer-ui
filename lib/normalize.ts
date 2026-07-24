@@ -311,7 +311,7 @@ export function normalizeCoverage(raw: unknown): CoverageData {
       if (!isRecord(entry)) continue
       const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'label'])
       if (!name) continue
-      const notes = firstString(entry, ['notes', 'note', 'comment', 'reason', 'explanation'])
+      const notes = firstString(entry, ['notes', 'note', 'comment', 'reason', 'explanation', 'justification', 'rationale'])
       criteria.push({
         name: decodeUnicodeEscapes(name),
         passed: toBoolean(pick(entry, ['passed', 'pass', 'met', 'satisfied'])),
@@ -369,29 +369,26 @@ export function isCoverageEmpty(data: CoverageData): boolean {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Enhanced-article presentation helpers
-//
-// The article stream may contain literal <br> tags (which must render as real
-// line breaks) and [+ADDED]…[/ADDED] marker pairs (which must render as inline
-// highlights, never as visible bracket tokens). Everything below is the single
-// shared preprocessing step applied before the string reaches the Markdown
-// renderer, the clipboard, or the PDF export.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// Enhanced-article marker handling: <br> tags become real line breaks and
+// [+ADDED]…[/ADDED] spans are split into highlighted segments. The raw marker
+// tokens never reach the renderer, the clipboard, or exported documents.
 
-const MARKER_OPEN = '[+ADDED]'
-const MARKER_CLOSE = '[/ADDED]'
+const ADDED_OPEN = '[+ADDED]'
+const ADDED_CLOSE = '[/ADDED]'
 
-// Tokens whose *partial* prefixes must never flash on screen at the current
-// streaming boundary (e.g. "[+ADD" or "<br" arriving mid-chunk).
-const DANGLING_TOKENS = [MARKER_OPEN, MARKER_CLOSE, '<br />', '<br/>', '<br>'] as const
+function normalizeBreaks(input: string): string {
+  return input.replace(/<br\s*\/?>/gi, '\n')
+}
 
-function trimDanglingToken(text: string): string {
-  for (const token of DANGLING_TOKENS) {
+/**
+ * Hides a partially streamed marker token at the very end of the text so the
+ * literal bracket characters never flash on screen mid-stream.
+ */
+function trimTrailingPartialMarker(text: string): string {
+  for (const token of [ADDED_OPEN, ADDED_CLOSE]) {
     for (let len = token.length - 1; len >= 1; len--) {
-      if (text.length < len) continue
-      const tail = text.slice(text.length - len).toLowerCase()
-      if (tail === token.slice(0, len).toLowerCase()) {
+      if (text.endsWith(token.slice(0, len))) {
         return text.slice(0, text.length - len)
       }
     }
@@ -400,87 +397,53 @@ function trimDanglingToken(text: string): string {
 }
 
 /**
- * Splits accumulated article text into plain and "added" segments.
- * - `<br>`, `<br/>`, `<br />` become markdown hard line breaks ("  \n").
- * - `[+ADDED]…[/ADDED]` pairs produce `added: true` segments (markers removed).
- * - Streaming-safe: an unclosed `[+ADDED]` highlights from the marker to the
- *   current end of text and keeps extending as more chunks arrive (progressive
- *   highlight extension), so the live-typing effect is never interrupted.
- * - A dangling partial marker/tag at the very end of the text is held back so
- *   raw fragments like "[+ADD" or "<br" never appear on screen.
+ * Splits enhanced-article text into ordered segments on [+ADDED]…[/ADDED]
+ * markers. Works progressively while streaming: an unclosed [+ADDED] span at
+ * the tail is treated as an added segment so highlights render live.
  */
-export function splitArticleSegments(input: string): ArticleSegment[] {
-  const withBreaks = input.replace(/<br\s*\/?>/gi, '  \n')
-  const text = trimDanglingToken(withBreaks)
+export function splitArticleSegments(content: string): ArticleSegment[] {
+  const normalized = trimTrailingPartialMarker(normalizeBreaks(content))
   const segments: ArticleSegment[] = []
-  let cursor = 0
-  while (cursor < text.length) {
-    const openIdx = text.indexOf(MARKER_OPEN, cursor)
+  let rest = normalized
+  while (rest.length > 0) {
+    const openIdx = rest.indexOf(ADDED_OPEN)
     if (openIdx === -1) {
-      segments.push({ text: text.slice(cursor), added: false })
+      segments.push({ text: rest, added: false })
       break
     }
-    if (openIdx > cursor) {
-      segments.push({ text: text.slice(cursor, openIdx), added: false })
+    if (openIdx > 0) {
+      segments.push({ text: rest.slice(0, openIdx), added: false })
     }
-    const innerStart = openIdx + MARKER_OPEN.length
-    const closeIdx = text.indexOf(MARKER_CLOSE, innerStart)
+    const afterOpen = rest.slice(openIdx + ADDED_OPEN.length)
+    const closeIdx = afterOpen.indexOf(ADDED_CLOSE)
     if (closeIdx === -1) {
-      // Progressive streaming highlight: [+ADDED] arrived but [/ADDED] has not.
-      segments.push({ text: text.slice(innerStart), added: true })
+      if (afterOpen) segments.push({ text: afterOpen, added: true })
       break
     }
-    segments.push({ text: text.slice(innerStart, closeIdx), added: true })
-    cursor = closeIdx + MARKER_CLOSE.length
+    const inner = afterOpen.slice(0, closeIdx)
+    if (inner) segments.push({ text: inner, added: true })
+    rest = afterOpen.slice(closeIdx + ADDED_CLOSE.length)
   }
   return segments.filter((segment) => segment.text.length > 0)
 }
 
 /**
- * Wraps one line of "added" text in <mark>, preserving markdown block prefixes
- * (headings, list bullets, blockquotes) and trailing hard-break whitespace
- * outside the tag so block structure and "  \n" hard breaks keep working.
+ * Removes [+ADDED]…[/ADDED] markers entirely (keeping the text inside) and
+ * converts <br> tags to real newlines — used for the clipboard and word count.
  */
-function wrapAddedLine(line: string): string {
-  const trailingMatch = line.match(/\s+$/)
-  const trailing = trailingMatch ? trailingMatch[0] : ''
-  const core = trailing ? line.slice(0, line.length - trailing.length) : line
-  if (!core.trim()) return line
-  const blockMatch = core.match(/^(\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*))(.*)$/)
-  if (blockMatch) {
-    const prefix = blockMatch[1] ?? ''
-    const rest = blockMatch[2] ?? ''
-    if (!rest.trim()) return line
-    return `${prefix}<mark>${rest}</mark>${trailing}`
-  }
-  return `<mark>${core}</mark>${trailing}`
-}
-
-/**
- * Single shared preprocessing step for on-screen rendering: converts <br>
- * variants to markdown hard breaks and [+ADDED]…[/ADDED] spans to <mark>
- * inline highlights. The output is handed to the Markdown renderer — the raw
- * substrings "<br>", "[+ADDED]", and "[/ADDED]" never survive this transform.
- */
-export function preprocessArticleContent(input: string): string {
-  return splitArticleSegments(input)
-    .map((segment) =>
-      segment.added
-        ? segment.text
-            .split('\n')
-            .map((line) => wrapAddedLine(line))
-            .join('\n')
-        : segment.text,
-    )
+export function stripArticleMarkers(content: string): string {
+  return splitArticleSegments(content)
+    .map((segment) => segment.text)
     .join('')
 }
 
 /**
- * Marker-free plain markdown for 'Copy article': <br> variants become real
- * line breaks and [+ADDED]/[/ADDED] tokens are stripped entirely.
+ * Shared display preprocessing: <br> → real line breaks and [+ADDED]…[/ADDED]
+ * → inline <mark> highlights (progressive while streaming). The raw marker
+ * tokens never reach the renderer.
  */
-export function stripArticleMarkers(input: string): string {
-  return splitArticleSegments(input)
-    .map((segment) => segment.text)
+export function preprocessArticleContent(content: string): string {
+  return splitArticleSegments(content)
+    .map((segment) => (segment.added ? `<mark>${segment.text}</mark>` : segment.text))
     .join('')
 }
