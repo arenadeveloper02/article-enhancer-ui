@@ -1,21 +1,21 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-24T08:11:43.217Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-24T08:23:04.202Z.
 
 ## Overview
 
-Article Enhancer Agent — paste an article, pick a content type, and watch an AI agent enhance it live with streaming Markdown output.
+Article Enhancer Agent
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 35
 
 ## Features
 
-- Streaming article enhancement with live stage progress
+- Streaming article enhancement with live Markdown output
 - Gap analysis, recommendations, and coverage verification panels
-- Relative link resolution against the submitted article URL with safe plain-text fallback
-- Heuristic boilerplate/nav list-block filtering in the rendered enhanced article
-- Enhancement request logging via Prisma
+- Optional article text fallback when the agent cannot scrape a page
+- Final-output recovery so Gap Analysis and Coverage Verification always populate
+- Printable export of the full enhancement report
 
 ## Tech Stack
 
@@ -132,7 +132,7 @@ Article Enhancer Agent — paste an article, pick a content type, and watch an A
 
 ## Latest Change
 
-- **Updated at:** 2026-07-24T08:11:43.217Z
+- **Updated at:** 2026-07-24T08:23:04.202Z
 - **Request:** === SCOPE LOCK: BUG-FIX-ONLY MODE ===
 This is a bug-fix request, not a redesign request. Apply ONLY the specific fix(es) described below. Do not use this as an opportunity to also improve, refactor, reposition, restyle, resize, reorder, rename, or "clean up" anything else in the app, even if you notice something else that looks improvable while you're in there.
 
@@ -147,10 +147,19 @@ Hard rules for this change:
 Bug(s) to fix in this change (and ONLY these):
 
 
-=== FIX: STRIP BOILERPLATE/NAV CONTENT FROM ENHANCED ARTICLE, AND VALIDATE/RESOLVE LINKS ===
+- We need to always make sure that the data for Gap Aanalysis and coverage verification data appears
 
-1. Link validation (rendering bug): when rendering the Enhanced Article markdown, any link href that is relative (does not start with http:// or https://) must NOT be left as-is or silently broken. Resolve it against the original `article_url` the user submitted (via `new URL(href, article_url).toString()`) so it becomes a valid absolute link, wrapped in try/catch — if resolution fails for any reason, render the link text as plain non-clickable text rather than a dead/broken href. Never pass a bare relative path straight into an `<a href>`.
+Here is the API as mentioned earlier:
 
-2. Boilerplate detection (content bug, defensive filter): before rendering, run the accumulated article markdown through a lightweight boilerplate-likelihood check on candidate list blocks: a bullet/numbered list where the majority of items are SHORT (under ~4 words), each item is ONLY a link with no surrounding sentence, and there are more than ~6 such consecutive items, is very likely a nav/footer/location menu, not article content. Flag such a block (console.warn, dev-only) and exclude it from the rendered article rather than displaying it as if it were body copy. This is a heuristic safety net, not a content editor — it should only strip blocks matching this specific pattern, never touch legitimate short lists (e.g. a real 3-5 item bullet list with prose) or single links inline in a paragraph.
 
-3. Scope: this fix touches only the article content pre-processing/rendering step. Do not change tab layout, positions, styling, or any other section.
+curl -X POST \
+  -H "X-API-Key: $SIM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"article_url":"example","article_text":"example","content_type":"example","stream":true,"selectedOutputs":["recommendations.recommendations","coverageverifier.criteria","coverageverifier.overall_score","coverageverifier.passed","coverageverifier.summary","gapanalysis.competitor_strengths","gapanalysis.coverage_gaps","gapanalysis.underdeveloped_sections","enhancedarticlewriter.content"]}' \
+  https://test-agent.thearena.ai/api/workflows/9aafe5d7-1d24-477a-ad3f-0be9bf79c04f/execute
+
+
+
+And also the input "Article text" is optional field
+
+The article text input field is a fallback if the agent cannot scrape a page.
