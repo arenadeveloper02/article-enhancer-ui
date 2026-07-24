@@ -1,6 +1,7 @@
 export type RequestPhase = 'idle' | 'streaming' | 'done' | 'error'
 
-export type SectionStatus = 'pending' | 'streaming' | 'done'
+// 'empty' = the run finished ([DONE]) but this section never produced usable data.
+export type SectionStatus = 'pending' | 'streaming' | 'done' | 'empty'
 
 export type PanelKey = 'article' | 'gapanalysis' | 'recommendations' | 'coverage'
 

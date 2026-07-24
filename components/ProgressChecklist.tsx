@@ -13,15 +13,12 @@ interface ProgressChecklistProps {
 export function ProgressChecklist({ stages }: ProgressChecklistProps) {
   return (
     <section
-      aria-label="Enhancement progress"
-      className="card-enter rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6"
+      aria-label="Pipeline progress"
+      className="card-enter rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-card sm:px-5"
     >
-      <h2 className="mb-4 font-display text-xs font-semibold uppercase tracking-wider text-ink-soft">
-        Pipeline progress
-      </h2>
-      <ol className="space-y-3">
-        {stages.map((stage) => (
-          <li key={stage.id} className="flex items-center gap-3">
+      <ol className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+        {stages.map((stage, index) => (
+          <li key={stage.id} className="flex min-w-0 items-center gap-2.5 sm:flex-1">
             {stage.status === 'done' ? (
               <span
                 aria-hidden="true"
@@ -49,18 +46,21 @@ export function ProgressChecklist({ stages }: ProgressChecklistProps) {
               </span>
             )}
             <span
-              className={
+              className={`truncate ${
                 stage.status === 'active'
                   ? 'animate-pulse text-sm font-semibold text-ink motion-reduce:animate-none'
                   : stage.status === 'done'
                     ? 'text-sm font-medium text-ink'
                     : 'text-sm text-slate-400'
-              }
+              }`}
             >
               {stage.label}
             </span>
             {stage.status === 'active' && <span className="sr-only">in progress</span>}
             {stage.status === 'done' && <span className="sr-only">complete</span>}
+            {index < stages.length - 1 && (
+              <span aria-hidden="true" className="ml-1 hidden h-px min-w-4 flex-1 bg-slate-200 sm:block" />
+            )}
           </li>
         ))}
       </ol>

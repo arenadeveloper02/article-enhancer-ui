@@ -4,6 +4,7 @@ import { SectionHeader } from '@/components/SectionHeader'
 interface CoverageCardProps {
   data: CoverageData | null
   status: SectionStatus
+  embedded?: boolean
 }
 
 function scoreClasses(score: number): string {
@@ -12,12 +13,14 @@ function scoreClasses(score: number): string {
   return 'border-rose-300 bg-rose-50 text-rose-700'
 }
 
-export function CoverageCard({ data, status }: CoverageCardProps) {
-  const showSkeleton = data === null && status !== 'done'
+export function CoverageCard({ data, status, embedded = false }: CoverageCardProps) {
+  const showSkeleton = data === null && status !== 'done' && status !== 'empty'
   return (
     <section
       aria-label="Coverage verification"
-      className="card-enter rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6"
+      className={
+        embedded ? '' : 'card-enter rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6'
+      }
     >
       <SectionHeader title="Coverage Verification" icon="✔" status={status} />
       {showSkeleton ? (
@@ -29,8 +32,8 @@ export function CoverageCard({ data, status }: CoverageCardProps) {
             <div className="skeleton-bar h-4 w-2/3 rounded-lg bg-slate-100" />
           </div>
         </div>
-      ) : data === null ? (
-        <p className="text-sm italic text-slate-400">No data</p>
+      ) : status === 'empty' || data === null ? (
+        <p className="text-sm italic text-slate-400">No data returned for this section.</p>
       ) : (
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-4">

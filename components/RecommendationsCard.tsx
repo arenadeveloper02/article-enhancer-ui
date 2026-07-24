@@ -16,8 +16,9 @@ function priorityClasses(priority: string): string {
 }
 
 export function RecommendationsCard({ data, status, embedded = false }: RecommendationsCardProps) {
-  const showSkeleton = data === null && status !== 'done'
+  const showSkeleton = data === null && status !== 'done' && status !== 'empty'
   const items = data ? data.recommendations : []
+  const done = status === 'done' || status === 'empty'
   return (
     <section
       aria-label="Recommendations"
@@ -35,7 +36,7 @@ export function RecommendationsCard({ data, status, embedded = false }: Recommen
           <div className="skeleton-bar h-14 w-5/6 rounded-xl bg-slate-100" />
         </div>
       ) : items.length === 0 ? (
-        <p className="text-sm italic text-slate-400">{status === 'done' ? 'No data' : 'Waiting for data…'}</p>
+        <p className="text-sm italic text-slate-400">{done ? 'No data' : 'Waiting for data…'}</p>
       ) : (
         <ol className="space-y-3">
           {items.map((item, index) => (

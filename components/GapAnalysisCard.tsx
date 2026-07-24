@@ -56,11 +56,11 @@ function SubGroup({ title, icon, items, done, dotClass, badgeClass }: SubGroupPr
 }
 
 export function GapAnalysisCard({ data, status, embedded = false }: GapAnalysisCardProps) {
-  const showSkeleton = data === null && status !== 'done'
+  const showSkeleton = data === null && status !== 'done' && status !== 'empty'
   const strengths: GapEntry[] = data ? data.competitor_strengths : []
   const gaps: GapEntry[] = data ? data.coverage_gaps : []
   const underdeveloped: GapEntry[] = data ? data.underdeveloped_sections : []
-  const done = status === 'done'
+  const done = status === 'done' || status === 'empty'
   return (
     <section
       aria-label="Gap analysis"

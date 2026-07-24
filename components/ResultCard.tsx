@@ -8,9 +8,10 @@ import type { SectionStatus } from '@/lib/types'
 interface ResultCardProps {
   content: string
   status: SectionStatus
+  embedded?: boolean
 }
 
-export function ResultCard({ content, status }: ResultCardProps) {
+export function ResultCard({ content, status, embedded = false }: ResultCardProps) {
   const [copied, setCopied] = useState(false)
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0
 
@@ -27,10 +28,16 @@ export function ResultCard({ content, status }: ResultCardProps) {
   return (
     <section
       aria-label="Enhanced article"
-      className="card-enter relative overflow-hidden rounded-2xl border-2 border-indigo-200 bg-white shadow-card"
+      className={
+        embedded
+          ? 'relative'
+          : 'card-enter relative overflow-hidden rounded-2xl border-2 border-indigo-200 bg-white shadow-card'
+      }
     >
-      {status === 'streaming' && <div className="gradient-line absolute inset-x-0 top-0 h-1" aria-hidden="true" />}
-      <div className="p-6 sm:p-8">
+      {status === 'streaming' && !embedded && (
+        <div className="gradient-line absolute inset-x-0 top-0 h-1" aria-hidden="true" />
+      )}
+      <div className={embedded ? '' : 'p-6 sm:p-8'}>
         <SectionHeader
           title="Enhanced Article"
           icon="✍"
@@ -63,8 +70,8 @@ export function ResultCard({ content, status }: ResultCardProps) {
               />
             )}
           </div>
-        ) : status === 'done' ? (
-          <p className="text-sm italic text-slate-400">No data</p>
+        ) : status === 'done' || status === 'empty' ? (
+          <p className="text-sm italic text-slate-400">No data returned for this section.</p>
         ) : (
           <div className="space-y-3" aria-hidden="true">
             <div className="skeleton-bar h-6 w-2/3 rounded-lg bg-slate-100" />

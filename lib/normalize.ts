@@ -337,3 +337,33 @@ export function extractArticleContent(raw: unknown): string {
     return ''
   }
 }
+
+/**
+ * True when a normalized GapAnalysisData is still the all-empty default shape.
+ */
+export function isGapAnalysisEmpty(data: GapAnalysisData): boolean {
+  return (
+    data.competitor_strengths.length === 0 &&
+    data.coverage_gaps.length === 0 &&
+    data.underdeveloped_sections.length === 0
+  )
+}
+
+/**
+ * True when a normalized RecommendationsData is still the empty default shape.
+ */
+export function isRecommendationsEmpty(data: RecommendationsData): boolean {
+  return data.recommendations.length === 0
+}
+
+/**
+ * True when a normalized CoverageData is still the all-null/empty default shape.
+ */
+export function isCoverageEmpty(data: CoverageData): boolean {
+  return (
+    data.overall_score === null &&
+    data.passed === null &&
+    data.summary === null &&
+    data.criteria.length === 0
+  )
+}
