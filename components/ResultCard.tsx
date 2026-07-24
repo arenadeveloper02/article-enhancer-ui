@@ -4,21 +4,24 @@ import { useState } from 'react'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { SectionHeader } from '@/components/SectionHeader'
 import { preprocessArticleContent, stripArticleMarkers } from '@/lib/normalize'
+import { stripBoilerplateListBlocks } from '@/lib/boilerplate'
 import type { SectionStatus } from '@/lib/types'
 
 interface ResultCardProps {
   content: string
   status: SectionStatus
   embedded?: boolean
+  articleUrl?: string
 }
 
-export function ResultCard({ content, status, embedded = false }: ResultCardProps) {
+export function ResultCard({ content, status, embedded = false, articleUrl }: ResultCardProps) {
   const [copied, setCopied] = useState(false)
 
   // Single shared preprocessing step: <br> → real line breaks, [+ADDED]…[/ADDED]
   // → inline <mark> highlights (progressive while streaming). The raw marker
-  // tokens never reach the renderer or the clipboard.
-  const displayContent = preprocessArticleContent(content)
+  // tokens never reach the renderer or the clipboard. A defensive boilerplate
+  // filter then strips nav/footer-style link-only list blocks before rendering.
+  const displayContent = stripBoilerplateListBlocks(preprocessArticleContent(content))
   const cleanContent = stripArticleMarkers(content)
   const wordCount = cleanContent.trim() ? cleanContent.trim().split(/\s+/).length : 0
 
@@ -69,7 +72,7 @@ export function ResultCard({ content, status, embedded = false }: ResultCardProp
         />
         {content ? (
           <div className="max-w-[68ch]">
-            <MarkdownRenderer content={displayContent} />
+            <MarkdownRenderer content={displayContent} baseUrl={articleUrl} />
             {status === 'streaming' && (
               <span
                 aria-hidden="true"

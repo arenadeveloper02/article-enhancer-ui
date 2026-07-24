@@ -18,6 +18,7 @@ interface ResultTabsProps {
   gapStatus: SectionStatus
   recData: RecommendationsData | null
   recStatus: SectionStatus
+  articleUrl?: string
 }
 
 function TabStatusIcon({ status }: { status: SectionStatus }) {
@@ -78,6 +79,7 @@ export function ResultTabs({
   gapStatus,
   recData,
   recStatus,
+  articleUrl,
 }: ResultTabsProps) {
   const [active, setActive] = useState<ResultTabKey>('article')
 
@@ -151,7 +153,9 @@ export function ResultTabs({
         aria-labelledby={`tab-${active}`}
         className="card-enter mt-3 max-h-[75vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6 lg:p-8"
       >
-        {active === 'article' && <ResultCard content={content} status={articleStatus} embedded />}
+        {active === 'article' && (
+          <ResultCard content={content} status={articleStatus} embedded articleUrl={articleUrl} />
+        )}
         {active === 'coverage' && <CoverageCard data={coverageData} status={coverageStatus} embedded />}
         {active === 'gap' && <GapAnalysisCard data={gapData} status={gapStatus} embedded />}
         {active === 'rec' && <RecommendationsCard data={recData} status={recStatus} embedded />}

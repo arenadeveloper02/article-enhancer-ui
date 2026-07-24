@@ -4,9 +4,33 @@ import rehypeRaw from 'rehype-raw'
 
 interface MarkdownRendererProps {
   content: string
+  baseUrl?: string
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
+/**
+ * Resolves a markdown link href to a safe absolute URL.
+ * - Absolute http(s), mailto: and tel: links pass through unchanged.
+ * - Relative hrefs are resolved against the original article URL (baseUrl).
+ * - If no base is available or resolution fails, returns null so the caller
+ *   renders the link text as plain non-clickable text instead of a broken href.
+ */
+function resolveHref(href: string | undefined, baseUrl?: string): string | null {
+  if (!href) return null
+  const trimmed = href.trim()
+  if (!trimmed) return null
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  if (/^(mailto:|tel:)/i.test(trimmed)) return trimmed
+  if (!baseUrl) return null
+  try {
+    const resolved = new URL(trimmed, baseUrl)
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return null
+    return resolved.toString()
+  } catch {
+    return null
+  }
+}
+
+export function MarkdownRenderer({ content, baseUrl }: MarkdownRendererProps) {
   return (
     <div className="markdown-body text-[15px] leading-relaxed text-ink">
       <ReactMarkdown
@@ -30,16 +54,24 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           ul: ({ children }) => <ul className="mb-4 list-disc space-y-1.5 pl-6">{children}</ul>,
           ol: ({ children }) => <ol className="mb-4 list-decimal space-y-1.5 pl-6">{children}</ol>,
           li: ({ children }) => <li className="marker:text-accent">{children}</li>,
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-accent underline decoration-indigo-200 underline-offset-2 transition hover:text-accent-deep hover:decoration-indigo-400"
-            >
-              {children}
-            </a>
-          ),
+          a: ({ href, children }) => {
+            const resolved = resolveHref(href, baseUrl)
+            if (!resolved) {
+              // Unresolvable / relative-without-base href: render the link
+              // text as plain non-clickable text — never emit a broken href.
+              return <span className="font-medium text-ink">{children}</span>
+            }
+            return (
+              <a
+                href={resolved}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-accent underline decoration-indigo-200 underline-offset-2 transition hover:text-accent-deep hover:decoration-indigo-400"
+              >
+                {children}
+              </a>
+            )
+          },
           strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
           blockquote: ({ children }) => (
             <blockquote className="mb-4 border-l-4 border-indigo-200 bg-indigo-50/50 py-2 pl-4 pr-3 italic text-ink-soft">

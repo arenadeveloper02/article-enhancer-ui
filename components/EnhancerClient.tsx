@@ -176,6 +176,9 @@ export function EnhancerClient() {
   const [gapData, setGapData] = useState<GapAnalysisData | null>(null)
   const [recData, setRecData] = useState<RecommendationsData | null>(null)
   const [coverage, setCoverage] = useState<CoverageData | null>(null)
+  // The URL the current run was submitted with — used to resolve relative
+  // links in the rendered enhanced article.
+  const [submittedUrl, setSubmittedUrl] = useState('')
 
   const abortRef = useRef<AbortController | null>(null)
   const startRef = useRef(0)
@@ -327,102 +330,61 @@ export function EnhancerClient() {
         articleValue = value
       }
     }
-    if (Object.keys(gapObj).length > 0) {
+    if (Object.keys(gapObj).length > 0 && !dataPresentRef.current.gapanalysis) {
       const normalized = normalizeGapAnalysis(gapObj)
       if (!isGapAnalysisEmpty(normalized)) {
         gapRef.current = normalized
         dataPresentRef.current.gapanalysis = true
         setGapData(normalized)
-        markSectionStreaming('gapanalysis')
       }
     }
-    if (Object.keys(covObj).length > 0) {
+    if (Object.keys(covObj).length > 0 && !dataPresentRef.current.coverage) {
       const normalized = normalizeCoverage(covObj)
       if (!isCoverageEmpty(normalized)) {
         covRef.current = normalized
         dataPresentRef.current.coverage = true
         setCoverage(normalized)
-        markSectionStreaming('coverage')
       }
     }
-    if (recValue !== undefined) {
+    if (recValue !== undefined && !dataPresentRef.current.recommendations) {
       const normalized = normalizeRecommendations(recValue)
       if (!isRecommendationsEmpty(normalized)) {
         recRef.current = normalized
         dataPresentRef.current.recommendations = true
         setRecData(normalized)
-        markSectionStreaming('recommendations')
       }
     }
-    if (articleValue !== undefined) {
+    if (articleValue !== undefined && !dataPresentRef.current.article) {
       const text = extractArticleContent(articleValue)
       if (text.trim()) {
         targetAccumRef.current.article = text
         dataPresentRef.current.article = true
         setContent(decodeUnicodeEscapes(text))
-        markSectionStreaming('article')
       }
     }
   }
 
-  function routeUnknownText(text: string): void {
-    const key = '__unknown'
-    const cached = blockTargetRef.current[key]
-    if (cached) {
-      routeToPanel(cached, text)
-      return
-    }
-    blockAccumRef.current[key] = (blockAccumRef.current[key] ?? '') + text
-    const classified = classifyUnknownPayload(blockAccumRef.current[key])
-    if (classified) {
-      blockTargetRef.current[key] = classified
-      routeToPanel(classified, blockAccumRef.current[key])
-    }
+  function finalizeRun(): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    setSections({
+      article: dataPresentRef.current.article ? 'done' : 'empty',
+      gapanalysis: dataPresentRef.current.gapanalysis ? 'done' : 'empty',
+      recommendations: dataPresentRef.current.recommendations ? 'done' : 'empty',
+      coverage: dataPresentRef.current.coverage ? 'done' : 'empty',
+    })
+    setStages({
+      gapanalysis: 'done',
+      recommendations: 'done',
+      enhancedarticlewriter: 'done',
+      coverageverifier: 'done',
+    })
+    setStatusMessage('')
+    setPhase('done')
   }
 
-  function handleStreamEvent(payload: unknown): void {
-    const record = asRecord(payload)
-    if (!record) return
-    const finalOutput = asRecord(record.output) ?? asRecord(record.result)
-    if (finalOutput) {
-      applyFinalOutputs(finalOutput)
-      return
-    }
-    const message =
-      typeof record.message === 'string'
-        ? record.message
-        : typeof record.status === 'string'
-          ? record.status
-          : ''
-    if (message && isHeartbeatMessage(message)) {
-      setStatusMessage(message.trim())
-      return
-    }
-    const blockId =
-      typeof record.blockId === 'string'
-        ? record.blockId
-        : typeof record.block_id === 'string'
-          ? record.block_id
-          : typeof record.blockName === 'string'
-            ? record.blockName
-            : ''
-    const chunk =
-      typeof record.chunk === 'string'
-        ? record.chunk
-        : typeof record.content === 'string'
-          ? record.content
-          : typeof record.data === 'string'
-            ? record.data
-            : ''
+  function routeChunk(blockId: string, chunk: string): void {
     if (!chunk) return
-    if (!blockId) {
-      if (isHeartbeatMessage(chunk)) {
-        setStatusMessage(chunk.trim())
-      } else {
-        routeUnknownText(chunk)
-      }
-      return
-    }
     const cached = blockTargetRef.current[blockId]
     if (cached) {
       routeToPanel(cached, chunk)
@@ -438,83 +400,108 @@ export function EnhancerClient() {
       routeToPanel(target, chunk)
       return
     }
-    blockAccumRef.current[blockId] = (blockAccumRef.current[blockId] ?? '') + chunk
-    const classified = classifyUnknownPayload(blockAccumRef.current[blockId])
+    const accumulated = (blockAccumRef.current[blockId] ?? '') + chunk
+    blockAccumRef.current[blockId] = accumulated
+    if (isHeartbeatMessage(accumulated)) {
+      setStatusMessage(accumulated.trim())
+      blockAccumRef.current[blockId] = ''
+      return
+    }
+    const classified = classifyUnknownPayload(accumulated)
     if (classified) {
       blockTargetRef.current[blockId] = classified
-      routeToPanel(classified, blockAccumRef.current[blockId])
+      blockAccumRef.current[blockId] = ''
+      routeToPanel(classified, accumulated)
     }
   }
 
-  function processLine(rawLine: string): void {
-    const line = rawLine.trim()
-    if (!line || !line.startsWith('data:')) return
-    const data = line.slice(5).trim()
+  function handleStreamEvent(raw: string): void {
+    const data = raw.trim()
     if (!data) return
     if (data === '[DONE]') {
-      doneRef.current = true
+      finalizeRun()
       return
     }
-    let parsed: unknown
+    let parsed: unknown = null
     try {
       parsed = JSON.parse(data)
     } catch {
-      if (!isHeartbeatMessage(data)) routeUnknownText(data)
+      parsed = null
+    }
+    const record = asRecord(parsed)
+    if (!record) {
+      if (isHeartbeatMessage(data)) setStatusMessage(data)
       return
     }
-    handleStreamEvent(parsed)
-  }
-
-  function finishRun(): void {
-    setSections((prev) => {
-      const next = { ...prev }
-      for (const key of Object.keys(next) as PanelKey[]) {
-        next[key] = dataPresentRef.current[key] ? 'done' : 'empty'
+    if (typeof record.error === 'string' && record.error.trim()) {
+      throw new Error(record.error)
+    }
+    const output = asRecord(record.output)
+    if (output) {
+      applyFinalOutputs(output)
+      return
+    }
+    const blockIdRaw = record.blockId ?? record.block_id ?? record.id
+    const blockId = typeof blockIdRaw === 'string' ? blockIdRaw : ''
+    const chunkRaw = record.chunk ?? record.data ?? record.content ?? record.text ?? record.delta
+    const chunk = typeof chunkRaw === 'string' ? chunkRaw : ''
+    if (blockId && chunk) {
+      routeChunk(blockId, chunk)
+      return
+    }
+    if (chunk) {
+      if (isHeartbeatMessage(chunk)) {
+        setStatusMessage(chunk.trim())
+        return
       }
-      return next
-    })
-    setStages(() => {
-      const next: Record<StageId, StageStatus> = { ...INITIAL_STAGES }
-      for (const id of STAGE_ORDER) next[id] = 'done'
-      return next
-    })
-    setStatusMessage('')
-    setPhase('done')
+      routeChunk('__unknown__', chunk)
+      return
+    }
+    const messageRaw = record.message ?? record.status
+    if (typeof messageRaw === 'string' && messageRaw.trim()) {
+      setStatusMessage(messageRaw.trim())
+    }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault()
-    if (!validate()) return
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+  function resetRunState(): void {
     doneRef.current = false
-    targetAccumRef.current = { article: '', gapanalysis: '', recommendations: '', coverage: '' }
-    blockAccumRef.current = {}
-    blockTargetRef.current = {}
-    gapRef.current = null
-    recRef.current = null
-    covRef.current = null
-    dataPresentRef.current = { article: false, gapanalysis: false, recommendations: false, coverage: false }
+    setErrorMessage('')
     setContent('')
     setGapData(null)
     setRecData(null)
     setCoverage(null)
+    gapRef.current = null
+    recRef.current = null
+    covRef.current = null
     setStages({ ...INITIAL_STAGES })
     setSections({ ...INITIAL_SECTIONS })
-    setErrorMessage('')
-    setStatusMessage('Contacting enhancement agent…')
-    setElapsed(0)
-    startRef.current = Date.now()
-    setPhase('streaming')
+    setStatusMessage('')
+    targetAccumRef.current = { article: '', gapanalysis: '', recommendations: '', coverage: '' }
+    blockAccumRef.current = {}
+    blockTargetRef.current = {}
+    dataPresentRef.current = { article: false, gapanalysis: false, recommendations: false, coverage: false }
+  }
 
+  async function runEnhancement(): Promise<void> {
+    if (!validate()) {
+      setPhase('idle')
+      return
+    }
     const resolvedType = contentType === 'Other' ? otherType.trim() : contentType
     const payload: EnhancePayload = {
       article_url: articleUrl.trim(),
       article_text: articleText.trim(),
       content_type: resolvedType,
     }
-
+    resetRunState()
+    setSubmittedUrl(payload.article_url)
+    setPhase('streaming')
+    startRef.current = Date.now()
+    setElapsed(0)
+    setStatusMessage('Contacting the enhancement agent…')
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
       const response = await fetch('/api/enhance', {
         method: 'POST',
@@ -523,30 +510,27 @@ export function EnhancerClient() {
         signal: controller.signal,
       })
       if (!response.ok) {
-        let message = `Request failed with status ${response.status}.`
+        let message = `Request failed (${response.status}).`
         try {
-          const errBody = (await response.json()) as { error?: string }
+          const errBody = (await response.json()) as { error?: unknown }
           if (typeof errBody.error === 'string' && errBody.error) message = errBody.error
         } catch {
-          // keep default message
+          // keep the generic message
         }
         throw new Error(message)
       }
-      const respContentType = response.headers.get('content-type') ?? ''
-      if (respContentType.includes('application/json')) {
+      const respType = response.headers.get('content-type') ?? ''
+      if (respType.includes('application/json')) {
         const json = (await response.json()) as unknown
         const record = asRecord(json)
         if (record) {
-          const output = asRecord(record.output) ?? record
-          applyFinalOutputs(output)
-          const article = extractArticleContent(output)
-          if (article.trim() && !dataPresentRef.current.article) {
-            targetAccumRef.current.article = article
-            dataPresentRef.current.article = true
-            setContent(decodeUnicodeEscapes(article))
+          if (typeof record.error === 'string' && record.error.trim()) {
+            throw new Error(record.error)
           }
+          const output = asRecord(record.output)
+          applyFinalOutputs(output ?? record)
         }
-        finishRun()
+        finalizeRun()
         return
       }
       if (!response.body) {
@@ -556,35 +540,40 @@ export function EnhancerClient() {
       const decoder = new TextDecoder()
       let buffer = ''
       for (;;) {
-        const { value, done } = await reader.read()
+        const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) processLine(line)
-        if (doneRef.current) break
+        let newlineIndex = buffer.indexOf('\n')
+        while (newlineIndex !== -1) {
+          const line = buffer.slice(0, newlineIndex).replace(/\r$/, '')
+          buffer = buffer.slice(newlineIndex + 1)
+          if (line.startsWith('data:')) handleStreamEvent(line.slice(5))
+          newlineIndex = buffer.indexOf('\n')
+        }
       }
-      if (buffer.trim() && !doneRef.current) processLine(buffer)
-      finishRun()
+      const tail = buffer.replace(/\r$/, '')
+      if (tail.startsWith('data:')) handleStreamEvent(tail.slice(5))
+      finalizeRun()
     } catch (err) {
       if (controller.signal.aborted) return
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Something went wrong while enhancing the article.'
+      setErrorMessage(message)
+      setStatusMessage('')
       setPhase('error')
-      setErrorMessage(
-        err instanceof Error && err.message ? err.message : 'Something went wrong. Please try again.',
-      )
     }
   }
 
-  function handleRetry(): void {
-    setPhase('idle')
-    setErrorMessage('')
+  function handleSubmit(e: FormEvent<HTMLFormElement>): void {
+    e.preventDefault()
+    if (phase === 'streaming') return
+    void runEnhancement()
   }
 
   function handleExport(): void {
-    const articleSource = targetAccumRef.current.article
-      ? decodeUnicodeEscapes(targetAccumRef.current.article)
-      : content
-    const html = buildPrintableHtml(articleSource, gapRef.current, recRef.current, covRef.current)
+    const html = buildPrintableHtml(content, gapRef.current, recRef.current, covRef.current)
     const win = window.open('', '_blank')
     if (!win) return
     win.document.write(html)
@@ -599,21 +588,19 @@ export function EnhancerClient() {
     status: stages[id],
   }))
 
-  const showResults = phase === 'streaming' || phase === 'done'
-
   return (
-    <div className="grid gap-8 lg:grid-cols-[400px,1fr] lg:items-start">
+    <div className="mx-auto max-w-5xl">
       <form
-        onSubmit={(e) => {
-          void handleSubmit(e)
-        }}
+        onSubmit={handleSubmit}
         noValidate
-        className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-7"
+        className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
       >
-        <h2 className="mb-5 font-display text-lg font-semibold text-ink">Your article</h2>
-        <div className="space-y-5">
-          <div>
-            <label htmlFor="article-url" className="mb-1.5 block text-sm font-medium text-ink">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label
+              htmlFor="article-url"
+              className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+            >
               Article URL
             </label>
             <input
@@ -622,58 +609,44 @@ export function EnhancerClient() {
               value={articleUrl}
               onChange={(e) => setArticleUrl(e.target.value)}
               placeholder="https://example.com/post"
-              disabled={phase === 'streaming'}
-              aria-invalid={errors.articleUrl ? true : undefined}
+              aria-invalid={Boolean(errors.articleUrl)}
               className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
             />
-            {errors.articleUrl ? (
+            {errors.articleUrl && (
               <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleUrl}</p>
-            ) : null}
+            )}
           </div>
           <div>
-            <label htmlFor="article-text" className="mb-1.5 block text-sm font-medium text-ink">
-              Article text
-            </label>
-            <textarea
-              id="article-text"
-              value={articleText}
-              onChange={(e) => setArticleText(e.target.value)}
-              rows={10}
-              placeholder="Paste the full article text here…"
-              disabled={phase === 'streaming'}
-              aria-invalid={errors.articleText ? true : undefined}
-              className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
-            />
-            {errors.articleText ? (
-              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleText}</p>
-            ) : null}
-          </div>
-          <div>
-            <label htmlFor="content-type" className="mb-1.5 block text-sm font-medium text-ink">
+            <label
+              htmlFor="content-type"
+              className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+            >
               Content type
             </label>
             <select
               id="content-type"
               value={contentType}
               onChange={(e) => setContentType(e.target.value)}
-              disabled={phase === 'streaming'}
-              aria-invalid={errors.contentType ? true : undefined}
+              aria-invalid={Boolean(errors.contentType)}
               className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'}`}
             >
-              <option value="">Select a content type…</option>
+              <option value="">Select a type…</option>
               {CONTENT_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
-            {errors.contentType ? (
+            {errors.contentType && (
               <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.contentType}</p>
-            ) : null}
+            )}
           </div>
-          {contentType === 'Other' ? (
+          {contentType === 'Other' && (
             <div>
-              <label htmlFor="other-type" className="mb-1.5 block text-sm font-medium text-ink">
+              <label
+                htmlFor="other-type"
+                className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+              >
                 Describe your content type
               </label>
               <input
@@ -681,72 +654,81 @@ export function EnhancerClient() {
                 type="text"
                 value={otherType}
                 onChange={(e) => setOtherType(e.target.value)}
-                placeholder="e.g. Case Study"
-                disabled={phase === 'streaming'}
-                aria-invalid={errors.otherType ? true : undefined}
+                placeholder="e.g. Case study"
+                aria-invalid={Boolean(errors.otherType)}
                 className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
               />
-              {errors.otherType ? (
+              {errors.otherType && (
                 <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.otherType}</p>
-              ) : null}
+              )}
             </div>
-          ) : null}
+          )}
+          <div className="sm:col-span-2">
+            <label
+              htmlFor="article-text"
+              className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+            >
+              Article text
+            </label>
+            <textarea
+              id="article-text"
+              rows={10}
+              value={articleText}
+              onChange={(e) => setArticleText(e.target.value)}
+              placeholder="Paste the full article text here…"
+              aria-invalid={Boolean(errors.articleText)}
+              className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
+            />
+            {errors.articleText && (
+              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleText}</p>
+            )}
+          </div>
+        </div>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
           <button
             type="submit"
             disabled={phase === 'streaming'}
-            className="w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
           >
             {phase === 'streaming' ? 'Enhancing…' : 'Enhance article'}
           </button>
+          {phase === 'streaming' && (
+            <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
+          )}
+          {phase === 'done' && (
+            <button
+              type="button"
+              onClick={handleExport}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep"
+            >
+              Export printable version
+            </button>
+          )}
         </div>
       </form>
-      <div className="min-w-0 space-y-5">
-        {phase === 'idle' && (
-          <section
-            aria-label="Getting started"
-            className="card-enter flex min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center"
-          >
-            <span aria-hidden="true" className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-xl">
-              ✍
-            </span>
-            <h2 className="font-display text-lg font-semibold text-ink">Ready when you are</h2>
-            <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
-              Fill in your article details and the enhanced version, gap analysis, recommendations,
-              and coverage verification will stream in live here.
-            </p>
-          </section>
-        )}
-        {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
-        {showResults && (
-          <>
-            {phase === 'streaming' && (
-              <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
-            )}
-            <ProgressChecklist stages={checklistStages} />
-            <ResultTabs
-              content={content}
-              articleStatus={sections.article}
-              coverageData={coverage}
-              coverageStatus={sections.coverage}
-              gapData={gapData}
-              gapStatus={sections.gapanalysis}
-              recData={recData}
-              recStatus={sections.recommendations}
-            />
-            {phase === 'done' && (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleExport}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep"
-                >
-                  Export printable version
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+
+      {phase === 'error' && (
+        <div className="mt-6">
+          <ErrorCard message={errorMessage} onRetry={() => void runEnhancement()} />
+        </div>
+      )}
+
+      {(phase === 'streaming' || phase === 'done') && (
+        <div className="mt-8 space-y-4">
+          <ProgressChecklist stages={checklistStages} />
+          <ResultTabs
+            content={content}
+            articleStatus={sections.article}
+            coverageData={coverage}
+            coverageStatus={sections.coverage}
+            gapData={gapData}
+            gapStatus={sections.gapanalysis}
+            recData={recData}
+            recStatus={sections.recommendations}
+            articleUrl={submittedUrl}
+          />
+        </div>
+      )}
     </div>
   )
 }
