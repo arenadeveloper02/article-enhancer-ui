@@ -25,6 +25,17 @@ export function resolveBlockTarget(blockId: string): BlockTarget | null {
   for (const entry of BLOCK_PREFIXES) {
     if (normalized.startsWith(entry.prefix)) return entry.target
   }
+  // Fallback: some stream payloads identify blocks by NAME or dotted output
+  // key (e.g. "gapanalysis.coverage_gaps", "coverageverifier.criteria")
+  // instead of the hardcoded UUID prefixes above. Route those semantically so
+  // the Gap Analysis and Coverage Verification panels never stay empty when
+  // upstream blockIds change. Order matters: gap analysis keys can contain
+  // the word "coverage" (coverage_gaps), so it is checked first.
+  const compact = normalized.replace(/[\s_-]/g, '')
+  if (compact.includes('gapanalysis') || compact.includes('gap')) return 'gapanalysis'
+  if (compact.includes('recommendation')) return 'recommendations'
+  if (compact.includes('coverage') || compact.includes('verifier')) return 'coverage'
+  if (compact.includes('article') || compact.includes('writer')) return 'article'
   return null
 }
 
@@ -45,14 +56,19 @@ export function classifyUnknownPayload(accumulated: string): PanelKey | null {
   if (
     lower.includes('competitor_strengths') ||
     lower.includes('coverage_gaps') ||
-    lower.includes('underdeveloped_sections')
+    lower.includes('underdeveloped_sections') ||
+    lower.includes('gapanalysis')
   ) {
     return 'gapanalysis'
   }
   if (lower.includes('"recommendations"') || lower.includes('recommendations":')) {
     return 'recommendations'
   }
-  if (lower.includes('overall_score') || (lower.includes('"criteria"') && lower.includes('"passed"'))) {
+  if (
+    lower.includes('overall_score') ||
+    lower.includes('coverageverifier') ||
+    (lower.includes('criteria') && lower.includes('passed'))
+  ) {
     return 'coverage'
   }
   const jsonish = text.startsWith('{') || text.startsWith('[')
