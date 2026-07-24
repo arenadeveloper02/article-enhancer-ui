@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { SectionHeader } from '@/components/SectionHeader'
+import { preprocessArticleContent, stripArticleMarkers } from '@/lib/normalize'
 import type { SectionStatus } from '@/lib/types'
 
 interface ResultCardProps {
@@ -13,11 +14,17 @@ interface ResultCardProps {
 
 export function ResultCard({ content, status, embedded = false }: ResultCardProps) {
   const [copied, setCopied] = useState(false)
-  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0
+
+  // Single shared preprocessing step: <br> → real line breaks, [+ADDED]…[/ADDED]
+  // → inline <mark> highlights (progressive while streaming). The raw marker
+  // tokens never reach the renderer or the clipboard.
+  const displayContent = preprocessArticleContent(content)
+  const cleanContent = stripArticleMarkers(content)
+  const wordCount = cleanContent.trim() ? cleanContent.trim().split(/\s+/).length : 0
 
   function handleCopy(): void {
     void navigator.clipboard
-      .writeText(content)
+      .writeText(cleanContent)
       .then(() => {
         setCopied(true)
         window.setTimeout(() => setCopied(false), 2000)
@@ -62,7 +69,7 @@ export function ResultCard({ content, status, embedded = false }: ResultCardProp
         />
         {content ? (
           <div className="max-w-[68ch]">
-            <MarkdownRenderer content={content} />
+            <MarkdownRenderer content={displayContent} />
             {status === 'streaming' && (
               <span
                 aria-hidden="true"

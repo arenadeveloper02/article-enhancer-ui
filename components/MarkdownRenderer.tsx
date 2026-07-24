@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 
 interface MarkdownRendererProps {
   content: string
@@ -10,6 +11,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
     <div className="markdown-body text-[15px] leading-relaxed text-ink">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
         components={{
           h1: ({ children }) => (
             <h1 className="mb-4 mt-6 font-display text-2xl font-semibold tracking-tight first:mt-0">
@@ -55,6 +57,12 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
             </pre>
           ),
           hr: () => <hr className="my-6 border-slate-200" />,
+          br: () => <br />,
+          mark: ({ children }) => (
+            <mark className="rounded-[3px] bg-indigo-100/80 px-0.5 py-px text-indigo-900 box-decoration-clone">
+              {children}
+            </mark>
+          ),
         }}
       >
         {content}

@@ -1,4 +1,5 @@
 import type {
+  ArticleSegment,
   CoverageData,
   CriteriaItem,
   GapAnalysisData,
@@ -366,4 +367,120 @@ export function isCoverageEmpty(data: CoverageData): boolean {
     data.summary === null &&
     data.criteria.length === 0
   )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enhanced-article presentation helpers
+//
+// The article stream may contain literal <br> tags (which must render as real
+// line breaks) and [+ADDED]…[/ADDED] marker pairs (which must render as inline
+// highlights, never as visible bracket tokens). Everything below is the single
+// shared preprocessing step applied before the string reaches the Markdown
+// renderer, the clipboard, or the PDF export.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MARKER_OPEN = '[+ADDED]'
+const MARKER_CLOSE = '[/ADDED]'
+
+// Tokens whose *partial* prefixes must never flash on screen at the current
+// streaming boundary (e.g. "[+ADD" or "<br" arriving mid-chunk).
+const DANGLING_TOKENS = [MARKER_OPEN, MARKER_CLOSE, '<br />', '<br/>', '<br>'] as const
+
+function trimDanglingToken(text: string): string {
+  for (const token of DANGLING_TOKENS) {
+    for (let len = token.length - 1; len >= 1; len--) {
+      if (text.length < len) continue
+      const tail = text.slice(text.length - len).toLowerCase()
+      if (tail === token.slice(0, len).toLowerCase()) {
+        return text.slice(0, text.length - len)
+      }
+    }
+  }
+  return text
+}
+
+/**
+ * Splits accumulated article text into plain and "added" segments.
+ * - `<br>`, `<br/>`, `<br />` become markdown hard line breaks ("  \n").
+ * - `[+ADDED]…[/ADDED]` pairs produce `added: true` segments (markers removed).
+ * - Streaming-safe: an unclosed `[+ADDED]` highlights from the marker to the
+ *   current end of text and keeps extending as more chunks arrive (progressive
+ *   highlight extension), so the live-typing effect is never interrupted.
+ * - A dangling partial marker/tag at the very end of the text is held back so
+ *   raw fragments like "[+ADD" or "<br" never appear on screen.
+ */
+export function splitArticleSegments(input: string): ArticleSegment[] {
+  const withBreaks = input.replace(/<br\s*\/?>/gi, '  \n')
+  const text = trimDanglingToken(withBreaks)
+  const segments: ArticleSegment[] = []
+  let cursor = 0
+  while (cursor < text.length) {
+    const openIdx = text.indexOf(MARKER_OPEN, cursor)
+    if (openIdx === -1) {
+      segments.push({ text: text.slice(cursor), added: false })
+      break
+    }
+    if (openIdx > cursor) {
+      segments.push({ text: text.slice(cursor, openIdx), added: false })
+    }
+    const innerStart = openIdx + MARKER_OPEN.length
+    const closeIdx = text.indexOf(MARKER_CLOSE, innerStart)
+    if (closeIdx === -1) {
+      // Progressive streaming highlight: [+ADDED] arrived but [/ADDED] has not.
+      segments.push({ text: text.slice(innerStart), added: true })
+      break
+    }
+    segments.push({ text: text.slice(innerStart, closeIdx), added: true })
+    cursor = closeIdx + MARKER_CLOSE.length
+  }
+  return segments.filter((segment) => segment.text.length > 0)
+}
+
+/**
+ * Wraps one line of "added" text in <mark>, preserving markdown block prefixes
+ * (headings, list bullets, blockquotes) and trailing hard-break whitespace
+ * outside the tag so block structure and "  \n" hard breaks keep working.
+ */
+function wrapAddedLine(line: string): string {
+  const trailingMatch = line.match(/\s+$/)
+  const trailing = trailingMatch ? trailingMatch[0] : ''
+  const core = trailing ? line.slice(0, line.length - trailing.length) : line
+  if (!core.trim()) return line
+  const blockMatch = core.match(/^(\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*))(.*)$/)
+  if (blockMatch) {
+    const prefix = blockMatch[1] ?? ''
+    const rest = blockMatch[2] ?? ''
+    if (!rest.trim()) return line
+    return `${prefix}<mark>${rest}</mark>${trailing}`
+  }
+  return `<mark>${core}</mark>${trailing}`
+}
+
+/**
+ * Single shared preprocessing step for on-screen rendering: converts <br>
+ * variants to markdown hard breaks and [+ADDED]…[/ADDED] spans to <mark>
+ * inline highlights. The output is handed to the Markdown renderer — the raw
+ * substrings "<br>", "[+ADDED]", and "[/ADDED]" never survive this transform.
+ */
+export function preprocessArticleContent(input: string): string {
+  return splitArticleSegments(input)
+    .map((segment) =>
+      segment.added
+        ? segment.text
+            .split('\n')
+            .map((line) => wrapAddedLine(line))
+            .join('\n')
+        : segment.text,
+    )
+    .join('')
+}
+
+/**
+ * Marker-free plain markdown for 'Copy article': <br> variants become real
+ * line breaks and [+ADDED]/[/ADDED] tokens are stripped entirely.
+ */
+export function stripArticleMarkers(input: string): string {
+  return splitArticleSegments(input)
+    .map((segment) => segment.text)
+    .join('')
 }

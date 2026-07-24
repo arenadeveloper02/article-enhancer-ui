@@ -61,3 +61,11 @@ export interface CoverageData {
   summary: string | null
   criteria: CriteriaItem[]
 }
+
+// A run of enhanced-article text, split on [+ADDED]…[/ADDED] markers.
+// `added: true` segments were introduced by the enhancement pipeline and are
+// rendered with an inline highlight instead of the literal bracket tokens.
+export interface ArticleSegment {
+  text: string
+  added: boolean
+}

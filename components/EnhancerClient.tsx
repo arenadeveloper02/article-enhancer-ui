@@ -5,6 +5,7 @@ import type { FormEvent } from 'react'
 import type {
   CoverageData,
   EnhanceFormErrors,
+  EnhancePayload,
   GapAnalysisData,
   PanelKey,
   RecommendationsData,
@@ -30,6 +31,7 @@ import {
   normalizeCoverage,
   normalizeGapAnalysis,
   normalizeRecommendations,
+  splitArticleSegments,
 } from '@/lib/normalize'
 import { StatusChip } from '@/components/StatusChip'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -81,6 +83,12 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
 function gapEntryText(entry: string | { title: string; detail?: string }): string {
   if (typeof entry === 'string') return entry
   return entry.detail ? `${entry.title} — ${entry.detail}` : entry.title
@@ -94,8 +102,17 @@ function buildPrintableHtml(
 ): string {
   const sections: string[] = []
   if (content.trim()) {
+    // <br> tags become real newlines and [+ADDED]…[/ADDED] spans render as
+    // visually highlighted text — the literal marker tokens never reach the PDF.
+    const articleHtml = splitArticleSegments(content)
+      .map((segment) =>
+        segment.added
+          ? `<span class="added">${escapeHtml(segment.text)}</span>`
+          : escapeHtml(segment.text),
+      )
+      .join('')
     sections.push(
-      `<section><h2>Enhanced Article</h2><div class="article">${escapeHtml(content)}</div></section>`,
+      `<section><h2>Enhanced Article</h2><div class="article">${articleHtml}</div></section>`,
     )
   }
   if (cov) {
@@ -140,7 +157,7 @@ function buildPrintableHtml(
         .join('')}</ol></section>`,
     )
   }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Article Enhancer Output</title><style>body{font-family:Georgia,serif;max-width:720px;margin:32px auto;padding:0 24px;color:#1b2040;line-height:1.6}h1{font-size:24px}h2{font-size:19px;margin-top:28px;border-bottom:1px solid #ddd;padding-bottom:6px}h3{font-size:15px;margin-top:18px}.article{white-space:pre-wrap}li{margin-bottom:6px}@media print{body{margin:0;max-width:none}}</style></head><body><h1>Article Enhancer Output</h1>${sections.join('')}</body></html>`
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Article Enhancer Output</title><style>body{font-family:Georgia,serif;max-width:720px;margin:32px auto;padding:0 24px;color:#1b2040;line-height:1.6}h1{font-size:24px}h2{font-size:19px;margin-top:28px;border-bottom:1px solid #ddd;padding-bottom:6px}h3{font-size:15px;margin-top:18px}.article{white-space:pre-wrap}.added{background:#e4e4fb;color:#3d3da8;border-radius:3px;padding:0 2px;-webkit-box-decoration-break:clone;box-decoration-break:clone;-webkit-print-color-adjust:exact;print-color-adjust:exact}li{margin-bottom:6px}@media print{body{margin:0;max-width:none}}</style></head><body><h1>Article Enhancer Output</h1>${sections.join('')}</body></html>`
 }
 
 export function EnhancerClient() {
@@ -179,6 +196,7 @@ export function EnhancerClient() {
     recommendations: false,
     coverage: false,
   })
+  const doneRef = useRef(false)
 
   useEffect(() => {
     return () => {
@@ -328,26 +346,19 @@ export function EnhancerClient() {
       recommendations: recEmpty ? 'empty' : 'done',
       coverage: covEmpty ? 'empty' : 'done',
     })
+    setContent(articleFinal)
     setStatusMessage('')
     setPhase('done')
   }
 
-  async function runEnhance(): Promise<void> {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+  function completeRun(): void {
+    if (doneRef.current) return
+    doneRef.current = true
+    finishRun()
+  }
 
-    // Optimistic UI: reset everything and start the run state immediately.
-    setPhase('streaming')
-    setContent('')
-    setStatusMessage('')
-    setErrorMessage('')
-    setElapsed(0)
-    setGapData(null)
-    setRecData(null)
-    setCoverage(null)
-    setSections({ ...INITIAL_SECTIONS })
-    setStages({ ...INITIAL_STAGES, gapanalysis: 'active' })
+  function resetRunState(): void {
+    doneRef.current = false
     targetAccumRef.current = { article: '', gapanalysis: '', recommendations: '', coverage: '' }
     blockAccumRef.current = {}
     blockTargetRef.current = {}
@@ -355,160 +366,6 @@ export function EnhancerClient() {
     recRef.current = null
     covRef.current = null
     dataPresentRef.current = { article: false, gapanalysis: false, recommendations: false, coverage: false }
-    startRef.current = Date.now()
-
-    const resolvedType = contentType === 'Other' ? otherType.trim() : contentType
-
-    // Returns true when the [DONE] sentinel is seen.
-    const handleLine = (rawLine: string): boolean => {
-      const line = rawLine.trim()
-      if (!line.startsWith('data:')) return false
-      const payload = line.slice(5).trim()
-      if (!payload) return false
-      if (payload === '[DONE]') return true
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(payload)
-      } catch {
-        // Partial or non-JSON line — ignore silently.
-        return false
-      }
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return false
-      const event = parsed as { blockId?: unknown; chunk?: unknown }
-      const blockId = typeof event.blockId === 'string' ? event.blockId : ''
-      const chunk = typeof event.chunk === 'string' ? event.chunk : ''
-      if (!chunk) return false
-      if (isHeartbeatMessage(chunk)) {
-        setStatusMessage(decodeUnicodeEscapes(chunk.trim()))
-        return false
-      }
-      const target = resolveBlockTarget(blockId)
-      if (target === 'status-theme' || target === 'status-research') {
-        setStatusMessage(statusLabelFor(target))
-        return false
-      }
-      if (target !== null) {
-        routeToPanel(target, chunk)
-        return false
-      }
-      // Unknown blockId fallback: accumulate, then classify by content.
-      const assigned = blockTargetRef.current[blockId]
-      if (assigned) {
-        routeToPanel(assigned, chunk)
-        return false
-      }
-      const accumulated = (blockAccumRef.current[blockId] ?? '') + chunk
-      blockAccumRef.current[blockId] = accumulated
-      const guess = classifyUnknownPayload(accumulated)
-      if (guess !== null) {
-        blockTargetRef.current[blockId] = guess
-        blockAccumRef.current[blockId] = ''
-        routeToPanel(guess, accumulated)
-      }
-      return false
-    }
-
-    try {
-      const res = await fetch('/api/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          article_url: articleUrl.trim(),
-          article_text: articleText.trim(),
-          content_type: resolvedType,
-        }),
-        signal: controller.signal,
-      })
-
-      if (!res.ok) {
-        let message = `Request failed with status ${res.status}.`
-        try {
-          const data = (await res.json()) as { error?: string }
-          if (data.error) message = data.error
-        } catch {
-          // Keep the default message.
-        }
-        throw new Error(message)
-      }
-
-      const responseType = res.headers.get('content-type') ?? ''
-
-      // Non-streamed JSON fallback.
-      if (responseType.includes('application/json')) {
-        const data: unknown = await res.json()
-        const g = normalizeGapAnalysis(data)
-        gapRef.current = g
-        if (!isGapAnalysisEmpty(g)) dataPresentRef.current.gapanalysis = true
-        setGapData(g)
-        const r = normalizeRecommendations(data)
-        recRef.current = r
-        if (!isRecommendationsEmpty(r)) dataPresentRef.current.recommendations = true
-        setRecData(r)
-        const c = normalizeCoverage(data)
-        covRef.current = c
-        if (!isCoverageEmpty(c)) dataPresentRef.current.coverage = true
-        setCoverage(c)
-        const fallbackArticle = extractArticleContent(data)
-        if (fallbackArticle) {
-          targetAccumRef.current.article = fallbackArticle
-          dataPresentRef.current.article = true
-          setContent(decodeUnicodeEscapes(fallbackArticle))
-        }
-        finishRun()
-        return
-      }
-
-      if (!res.body) {
-        throw new Error('No response body was received from the server.')
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let finished = false
-
-      while (!finished) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value) buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (handleLine(line)) {
-            finished = true
-            break
-          }
-        }
-      }
-      if (!finished) {
-        buffer += decoder.decode()
-        if (buffer.trim()) handleLine(buffer)
-      }
-
-      finishRun()
-    } catch (err) {
-      if (controller.signal.aborted) return
-      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
-      setPhase('error')
-    }
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault()
-    if (!validate()) return
-    void runEnhance()
-  }
-
-  function handleRetry(): void {
-    if (!validate()) return
-    void runEnhance()
-  }
-
-  function handleCancel(): void {
-    abortRef.current?.abort()
-    setPhase('idle')
-    setStatusMessage('')
-    setElapsed(0)
     setContent('')
     setGapData(null)
     setRecData(null)
@@ -516,20 +373,194 @@ export function EnhancerClient() {
     setStages({ ...INITIAL_STAGES })
     setSections({ ...INITIAL_SECTIONS })
     setErrorMessage('')
-    targetAccumRef.current = { article: '', gapanalysis: '', recommendations: '', coverage: '' }
-    blockAccumRef.current = {}
-    blockTargetRef.current = {}
-    gapRef.current = null
-    recRef.current = null
-    covRef.current = null
-    dataPresentRef.current = { article: false, gapanalysis: false, recommendations: false, coverage: false }
+    setStatusMessage('')
+    setElapsed(0)
   }
 
-  function handleDownloadPdf(): void {
+  function applyFallbackJson(data: unknown): void {
+    const article = extractArticleContent(data)
+    if (article.trim()) {
+      targetAccumRef.current.article = article
+      dataPresentRef.current.article = true
+    }
+    const gap = normalizeGapAnalysis(data)
+    if (!isGapAnalysisEmpty(gap)) {
+      gapRef.current = gap
+      dataPresentRef.current.gapanalysis = true
+    }
+    const rec = normalizeRecommendations(data)
+    if (!isRecommendationsEmpty(rec)) {
+      recRef.current = rec
+      dataPresentRef.current.recommendations = true
+    }
+    const cov = normalizeCoverage(data)
+    if (!isCoverageEmpty(cov)) {
+      covRef.current = cov
+      dataPresentRef.current.coverage = true
+    }
+  }
+
+  function handleChunk(blockId: string, text: string): void {
+    if (!text) return
+    const target = blockId ? resolveBlockTarget(blockId) : null
+    if (target === 'status-theme' || target === 'status-research') {
+      setStatusMessage(statusLabelFor(target))
+      return
+    }
+    if (target) {
+      routeToPanel(target, text)
+      return
+    }
+    if (isHeartbeatMessage(text)) {
+      setStatusMessage(text.trim())
+      return
+    }
+    const key = blockId || '__unrouted__'
+    const assigned = blockTargetRef.current[key]
+    if (assigned) {
+      routeToPanel(assigned, text)
+      return
+    }
+    blockAccumRef.current[key] = (blockAccumRef.current[key] ?? '') + text
+    const classified = classifyUnknownPayload(blockAccumRef.current[key])
+    if (classified) {
+      blockTargetRef.current[key] = classified
+      routeToPanel(classified, blockAccumRef.current[key])
+      blockAccumRef.current[key] = ''
+    }
+  }
+
+  function processSseLine(line: string): void {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith(':')) return
+    const payload = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed
+    if (!payload) return
+    if (payload === '[DONE]') {
+      completeRun()
+      return
+    }
+    let parsed: unknown = null
+    try {
+      parsed = JSON.parse(payload)
+    } catch {
+      parsed = null
+    }
+    const record = asRecord(parsed)
+    if (!record) {
+      handleChunk('', payload)
+      return
+    }
+    const blockId =
+      typeof record.blockId === 'string'
+        ? record.blockId
+        : typeof record.block_id === 'string'
+          ? record.block_id
+          : typeof record.id === 'string'
+            ? record.id
+            : ''
+    const rawChunk =
+      typeof record.chunk === 'string'
+        ? record.chunk
+        : typeof record.content === 'string'
+          ? record.content
+          : typeof record.delta === 'string'
+            ? record.delta
+            : typeof record.text === 'string'
+              ? record.text
+              : typeof record.output === 'string'
+                ? record.output
+                : ''
+    if (rawChunk) {
+      handleChunk(blockId, rawChunk)
+      return
+    }
+    // Structured (non-string) payload — treat as a JSON data fallback.
+    applyFallbackJson(record)
+  }
+
+  async function runEnhancement(payload: EnhancePayload, signal: AbortSignal): Promise<void> {
+    const response = await fetch('/api/enhance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    })
+    const contentTypeHeader = response.headers.get('content-type') ?? ''
+    if (!response.ok) {
+      let message = `The enhancement request failed (${response.status}).`
+      if (contentTypeHeader.includes('application/json')) {
+        try {
+          const data = (await response.json()) as { error?: unknown }
+          if (typeof data.error === 'string' && data.error) message = data.error
+        } catch {
+          // Keep the default message.
+        }
+      }
+      throw new Error(message)
+    }
+    if (contentTypeHeader.includes('application/json')) {
+      const data = (await response.json()) as unknown
+      applyFallbackJson(data)
+      completeRun()
+      return
+    }
+    if (!response.body) {
+      throw new Error('The enhancement service returned an empty response.')
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() ?? ''
+      for (const line of lines) processSseLine(line)
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) processSseLine(buffer)
+    completeRun()
+  }
+
+  function startRun(): void {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    resetRunState()
+    startRef.current = Date.now()
+    setPhase('streaming')
+    setStatusMessage('Contacting the enhancement agent…')
+    const payload: EnhancePayload = {
+      article_url: articleUrl.trim(),
+      article_text: articleText.trim(),
+      content_type: contentType === 'Other' ? otherType.trim() : contentType,
+    }
+    void runEnhancement(payload, controller.signal).catch((error: unknown) => {
+      if (controller.signal.aborted) return
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Something went wrong while streaming the enhancement.'
+      setErrorMessage(message)
+      setStatusMessage('')
+      setPhase('error')
+    })
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault()
+    if (phase === 'streaming') return
+    if (!validate()) return
+    startRun()
+  }
+
+  function handleExportPdf(): void {
+    const html = buildPrintableHtml(content, gapData, recData, coverage)
     const win = window.open('', '_blank')
     if (!win) return
     win.document.open()
-    win.document.write(buildPrintableHtml(content, gapData, recData, coverage))
+    win.document.write(html)
     win.document.close()
     win.focus()
     window.setTimeout(() => {
@@ -543,16 +574,16 @@ export function EnhancerClient() {
     status: stages[id],
   }))
 
-  const hasAnyOutput =
-    Boolean(content.trim()) || gapData !== null || recData !== null || coverage !== null
+  const streaming = phase === 'streaming'
   const showResults = phase === 'streaming' || phase === 'done'
 
   return (
-    <div className="space-y-8">
+    <div className="grid gap-8 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
       <form
-        noValidate
         onSubmit={handleSubmit}
-        className="card-enter mx-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
+        noValidate
+        aria-label="Article enhancement form"
+        className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-7 lg:sticky lg:top-6"
       >
         <div className="space-y-5">
           <div>
@@ -563,14 +594,15 @@ export function EnhancerClient() {
               id="article-url"
               type="url"
               value={articleUrl}
-              onChange={(e) => setArticleUrl(e.target.value)}
+              onChange={(event) => setArticleUrl(event.target.value)}
               placeholder="https://example.com/post"
+              disabled={streaming}
               aria-invalid={Boolean(errors.articleUrl)}
               aria-describedby={errors.articleUrl ? 'article-url-error' : undefined}
               className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
             />
             {errors.articleUrl && (
-              <p id="article-url-error" role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
+              <p id="article-url-error" className="mt-1.5 text-xs font-medium text-rose-600">
                 {errors.articleUrl}
               </p>
             )}
@@ -581,140 +613,120 @@ export function EnhancerClient() {
             </label>
             <textarea
               id="article-text"
-              rows={8}
+              rows={10}
               value={articleText}
-              onChange={(e) => setArticleText(e.target.value)}
+              onChange={(event) => setArticleText(event.target.value)}
               placeholder="Paste the full article text here…"
+              disabled={streaming}
               aria-invalid={Boolean(errors.articleText)}
               aria-describedby={errors.articleText ? 'article-text-error' : undefined}
               className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
             />
             {errors.articleText && (
-              <p id="article-text-error" role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
+              <p id="article-text-error" className="mt-1.5 text-xs font-medium text-rose-600">
                 {errors.articleText}
               </p>
             )}
           </div>
-          <fieldset>
-            <legend className="mb-2 block text-sm font-medium text-ink">Content type</legend>
-            <div className="flex flex-wrap gap-2">
+          <div>
+            <label htmlFor="content-type" className="mb-1.5 block text-sm font-medium text-ink">
+              Content type
+            </label>
+            <select
+              id="content-type"
+              value={contentType}
+              onChange={(event) => setContentType(event.target.value)}
+              disabled={streaming}
+              aria-invalid={Boolean(errors.contentType)}
+              aria-describedby={errors.contentType ? 'content-type-error' : undefined}
+              className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'}`}
+            >
+              <option value="">Select a content type…</option>
               {CONTENT_TYPES.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  aria-pressed={contentType === type}
-                  onClick={() => {
-                    setContentType(type)
-                    setErrors((prev) => ({ ...prev, contentType: undefined }))
-                  }}
-                  className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:outline-2 focus-visible:outline-accent ${
-                    contentType === type
-                      ? 'border-accent bg-indigo-50 text-accent-deep'
-                      : 'border-slate-200 bg-white text-ink-soft hover:border-indigo-200 hover:text-ink'
-                  }`}
-                >
+                <option key={type} value={type}>
                   {type}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
             {errors.contentType && (
-              <p role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
+              <p id="content-type-error" className="mt-1.5 text-xs font-medium text-rose-600">
                 {errors.contentType}
               </p>
             )}
-            {contentType === 'Other' && (
-              <div className="mt-3">
-                <label htmlFor="other-type" className="mb-1.5 block text-sm font-medium text-ink">
-                  Describe your content type
-                </label>
-                <input
-                  id="other-type"
-                  type="text"
-                  value={otherType}
-                  onChange={(e) => setOtherType(e.target.value)}
-                  placeholder="e.g. Case study, whitepaper…"
-                  aria-invalid={Boolean(errors.otherType)}
-                  aria-describedby={errors.otherType ? 'other-type-error' : undefined}
-                  className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
-                />
-                {errors.otherType && (
-                  <p id="other-type-error" role="alert" className="mt-1.5 text-xs font-medium text-rose-600">
-                    {errors.otherType}
-                  </p>
-                )}
-              </div>
-            )}
-          </fieldset>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={phase === 'streaming'}
-              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {phase === 'streaming' ? 'Enhancing…' : 'Enhance article'}
-            </button>
-            {phase === 'streaming' && (
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:border-rose-200 hover:text-rose-600"
-              >
-                Cancel
-              </button>
-            )}
           </div>
+          {contentType === 'Other' && (
+            <div>
+              <label htmlFor="other-type" className="mb-1.5 block text-sm font-medium text-ink">
+                Describe your content type
+              </label>
+              <input
+                id="other-type"
+                type="text"
+                value={otherType}
+                onChange={(event) => setOtherType(event.target.value)}
+                placeholder="e.g. Technical whitepaper"
+                disabled={streaming}
+                aria-invalid={Boolean(errors.otherType)}
+                aria-describedby={errors.otherType ? 'other-type-error' : undefined}
+                className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
+              />
+              {errors.otherType && (
+                <p id="other-type-error" className="mt-1.5 text-xs font-medium text-rose-600">
+                  {errors.otherType}
+                </p>
+              )}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={streaming}
+            className="w-full rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {streaming ? 'Enhancing…' : phase === 'done' ? 'Enhance again' : 'Enhance article'}
+          </button>
+          {phase === 'done' && content.trim() && (
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              className="w-full rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep"
+            >
+              Export full report (PDF)
+            </button>
+          )}
         </div>
       </form>
-
-      {phase === 'error' && errorMessage ? (
-        <div className="mx-auto w-full max-w-3xl">
-          <ErrorCard message={errorMessage} onRetry={handleRetry} />
-        </div>
-      ) : null}
-
-      {showResults && (
-        <div className="space-y-5">
-          {/* Always-visible top bar: status chip + pipeline progress + PDF export. */}
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                {phase === 'streaming' ? (
-                  <StatusChip
-                    message={statusMessage || 'Enhancing your article…'}
-                    elapsedSeconds={elapsed}
-                  />
-                ) : (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800">
-                    ✓ Completed in {elapsed}s
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                disabled={!hasAnyOutput}
-                className="inline-flex shrink-0 items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-ink transition hover:border-indigo-200 hover:text-accent-deep disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
-              >
-                <span aria-hidden="true">⤓</span>
-                Download as PDF
-              </button>
-            </div>
-            <ProgressChecklist stages={checklistStages} />
-          </div>
-
-          {/* Tabbed results area — all four sections keep streaming in the background. */}
-          <ResultTabs
-            content={content}
-            articleStatus={sections.article}
-            coverageData={coverage}
-            coverageStatus={sections.coverage}
-            gapData={gapData}
-            gapStatus={sections.gapanalysis}
-            recData={recData}
-            recStatus={sections.recommendations}
-          />
-        </div>
-      )}
+      <div className="min-w-0 space-y-4">
+        {phase === 'error' ? (
+          <ErrorCard message={errorMessage} onRetry={startRun} />
+        ) : (
+          <>
+            {streaming && statusMessage && (
+              <StatusChip message={statusMessage} elapsedSeconds={elapsed} />
+            )}
+            {showResults && <ProgressChecklist stages={checklistStages} />}
+            {showResults ? (
+              <ResultTabs
+                content={content}
+                articleStatus={sections.article}
+                coverageData={coverage}
+                coverageStatus={sections.coverage}
+                gapData={gapData}
+                gapStatus={sections.gapanalysis}
+                recData={recData}
+                recStatus={sections.recommendations}
+              />
+            ) : (
+              <section className="card-enter rounded-2xl border border-dashed border-slate-200 bg-white/60 p-10 text-center">
+                <p className="font-display text-lg font-semibold text-ink">Ready when you are</p>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
+                  Fill in the form and start an enhancement to watch gap analysis, recommendations,
+                  the enhanced article, and coverage verification stream in live.
+                </p>
+              </section>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
