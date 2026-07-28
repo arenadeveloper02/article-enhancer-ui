@@ -1,22 +1,22 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-28T11:11:12.932Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-28T12:01:30.469Z.
 
 ## Overview
 
-AI-powered article enhancer that streams gap analysis, recommendations, an enhanced draft, and coverage verification live from the Arena workflow agent.
+Article Enhancer Agent — paste an article, pick a content type, and watch an AI agent enhance it live with streaming output. This edit fixes the 'data arrives but never renders' bug by making the stream client tolerant of every upstream payload shape: dotted selected-output keys (e.g. gapanalysis.coverage_gaps, enhancedarticlewriter.content), nested output/result/data envelopes, non-streamed JSON fallbacks, unrouted chunks, and a final raw-transcript salvage pass — panels now populate as soon as usable data appears anywhere in the stream.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 40
 
 ## Features
 
-- Streaming enhancement pipeline with live stage checklist
-- Enhanced article with inline ADDED highlights and markdown rendering
+- Streaming article enhancement with live Markdown rendering
+- Tolerant stream parser: per-block chunks, dotted output keys, nested final outputs, JSON fallback, transcript salvage
 - Gap analysis, recommendations, and coverage verification panels
-- Printable/exportable report of all results
-- Arena DS blue theme with Poppins typography
-- Prisma logging of enhancement requests
+- Pipeline progress checklist and live status chip
+- Export / print of the full enhancement report
+- Arena email gate with access-denied page
 
 ## Tech Stack
 
@@ -144,12 +144,23 @@ AI-powered article enhancer that streams gap analysis, recommendations, an enhan
 
 ## Latest Change
 
-- **Updated at:** 2026-07-28T11:11:12.932Z
-- **Request:** change the theme, 
+- **Updated at:** 2026-07-28T12:01:30.469Z
+- **Request:** the data is coming but its not getting rendered in the UI 
 
-change the base URL from https://test-agent.thearena.ai/
-to   https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute
-
-
-and change the API key to 
-sk-sim-Vk9yj3QfVSZxJ8lulZTYK549u5ThZo9u
+curl 'https://article-enhancer-ui.vercel.app/api/enhance' \
+  -H 'accept: */*' \
+  -H 'accept-language: en-GB,en-US;q=0.9,en;q=0.8,kn;q=0.7' \
+  -H 'content-type: application/json' \
+  -b 'arena_email_id=anush.ms%40position2.com' \
+  -H 'origin: https://article-enhancer-ui.vercel.app' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://article-enhancer-ui.vercel.app/?emailId=anush.ms%40position2.com' \
+  -H 'sec-ch-ua: "Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "macOS"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sec-fetch-storage-access: active' \
+  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36' \
+  --data-raw '{"article_url":"https://www.gentledental.com/resources/articles/tooth-sensitivity","article_text":"Sharp, sudden tooth pain can truly be a nuisance to experience and is more common than you may think. Tooth sensitivity may temporarily occur when exposed to triggers like cold air, or foods and beverages that are hot, cold, sweet, or acidic. It commonly occurs due to worn tooth enamel or gum recession from issues like decay/cavities, gum disease, aggressive toothbrushing, teeth grinding, or acidic diets. The good news is that there are several tooth sensitivity treatment options to stop the pain, for good. In this blog, we explore sensitive teeth causes, remedies, and solutions.","content_type":"Landing Page"}'
