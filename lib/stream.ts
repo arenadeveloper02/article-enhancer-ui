@@ -10,12 +10,17 @@ export const STAGE_ORDER: StageId[] = [
 ]
 
 // blockId prefix → panel/status routing map (match by startsWith so full UUIDs map).
+// Both the original workflow blockIds and the current deployment's blockIds are
+// listed — upstream redeploys rotate the UUIDs, so every observed prefix stays here.
 const BLOCK_PREFIXES: Array<{ prefix: string; target: BlockTarget }> = [
   { prefix: '65f7256c', target: 'status-theme' },
   { prefix: '648b01f8', target: 'status-research' },
   { prefix: '0f239b6f', target: 'gapanalysis' },
+  { prefix: '5188475d', target: 'gapanalysis' },
   { prefix: '5ae6657d', target: 'recommendations' },
+  { prefix: '20386b78', target: 'recommendations' },
   { prefix: '88db1a98', target: 'article' },
+  { prefix: '1471c258', target: 'article' },
   { prefix: 'c4bd5114', target: 'coverage' },
 ]
 
@@ -57,11 +62,18 @@ export function classifyUnknownPayload(accumulated: string): PanelKey | null {
     lower.includes('competitor_strengths') ||
     lower.includes('coverage_gaps') ||
     lower.includes('underdeveloped_sections') ||
+    lower.includes('why_it_matters') ||
+    lower.includes('"gap"') ||
     lower.includes('gapanalysis')
   ) {
     return 'gapanalysis'
   }
-  if (lower.includes('"recommendations"') || lower.includes('recommendations":')) {
+  if (
+    lower.includes('"recommendations"') ||
+    lower.includes('recommendations":') ||
+    lower.includes('"recommendation"') ||
+    lower.includes('"placement"')
+  ) {
     return 'recommendations'
   }
   if (

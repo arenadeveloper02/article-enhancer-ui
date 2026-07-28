@@ -67,6 +67,60 @@ export function extractBalancedJson(text: string): unknown {
   }
 }
 
+/**
+ * Extracts EVERY structurally complete JSON object/array found in raw text,
+ * in order. Some stream runs emit a block's output as a plain sequence of
+ * JSON arrays (no wrapping object keys) — this lets normalizers route those
+ * payloads positionally instead of dropping everything after the first array.
+ */
+function extractAllBalancedJson(text: string): unknown[] {
+  const results: unknown[] = []
+  let cursor = 0
+  while (cursor < text.length) {
+    const rel = text.slice(cursor).search(/[{[]/)
+    if (rel === -1) break
+    const start = cursor + rel
+    let depth = 0
+    let inString = false
+    let escaped = false
+    let end = -1
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i]
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (ch === '\\') {
+          escaped = true
+        } else if (ch === '"') {
+          inString = false
+        }
+        continue
+      }
+      if (ch === '"') {
+        inString = true
+        continue
+      }
+      if (ch === '{' || ch === '[') {
+        depth++
+      } else if (ch === '}' || ch === ']') {
+        depth--
+        if (depth === 0) {
+          end = i
+          break
+        }
+      }
+    }
+    if (end === -1) break
+    try {
+      results.push(JSON.parse(text.slice(start, end + 1)) as unknown)
+    } catch {
+      // Skip unparseable regions and keep scanning.
+    }
+    cursor = end + 1
+  }
+  return results
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -156,7 +210,7 @@ function toGapEntries(value: unknown): GapEntry[] {
       }
       if (isRecord(item)) {
         const title = firstString(item, ['title', 'name', 'strength', 'gap', 'section', 'text', 'summary', 'item', 'label'])
-        const detail = firstString(item, ['detail', 'details', 'description', 'notes', 'reason', 'explanation'])
+        const detail = firstString(item, ['detail', 'details', 'description', 'notes', 'reason', 'explanation', 'why_it_matters', 'rationale'])
         if (title) {
           if (detail && detail !== title) {
             out.push({ title: decodeUnicodeEscapes(title), detail: decodeUnicodeEscapes(detail) })
@@ -175,10 +229,30 @@ function toGapEntries(value: unknown): GapEntry[] {
 export function normalizeGapAnalysis(raw: unknown): GapAnalysisData {
   try {
     const parsed = parseMaybe(raw)
+    let strengths = lookup(parsed, ['competitor_strengths'])
+    let gaps = lookup(parsed, ['coverage_gaps'])
+    let underdeveloped = lookup(parsed, ['underdeveloped_sections'])
+    // Keyless fallback: current stream runs emit the gap-analysis block as a
+    // plain SEQUENCE of JSON arrays (competitor strengths, then coverage gaps,
+    // then underdeveloped sections) with no wrapping object keys. Route those
+    // positionally so the panel never stays empty.
+    if (
+      strengths === undefined &&
+      gaps === undefined &&
+      underdeveloped === undefined &&
+      typeof raw === 'string'
+    ) {
+      const arrays = extractAllBalancedJson(raw).filter((entry): entry is unknown[] => Array.isArray(entry))
+      if (arrays.length > 0) {
+        strengths = arrays[0]
+        gaps = arrays.length > 1 ? arrays[1] : undefined
+        underdeveloped = arrays.length > 2 ? arrays[2] : undefined
+      }
+    }
     return {
-      competitor_strengths: toGapEntries(lookup(parsed, ['competitor_strengths'])) as GapAnalysisData['competitor_strengths'],
-      coverage_gaps: toGapEntries(lookup(parsed, ['coverage_gaps'])) as GapAnalysisData['coverage_gaps'],
-      underdeveloped_sections: toGapEntries(lookup(parsed, ['underdeveloped_sections'])) as GapAnalysisData['underdeveloped_sections'],
+      competitor_strengths: toGapEntries(strengths) as GapAnalysisData['competitor_strengths'],
+      coverage_gaps: toGapEntries(gaps) as GapAnalysisData['coverage_gaps'],
+      underdeveloped_sections: toGapEntries(underdeveloped) as GapAnalysisData['underdeveloped_sections'],
     }
   } catch {
     return { competitor_strengths: [], coverage_gaps: [], underdeveloped_sections: [] }
@@ -215,7 +289,7 @@ export function normalizeRecommendations(raw: unknown): RecommendationsData {
       }
       if (!isRecord(entry)) continue
       let title = firstString(entry, ['title', 'headline', 'name'])
-      let detail = firstString(entry, ['detail', 'details', 'description', 'text', 'body', 'recommendation'])
+      let detail = firstString(entry, ['detail', 'details', 'description', 'text', 'body', 'recommendation', 'rationale'])
       if (!title) {
         if (!detail) continue
         if (detail.length > 60) {
@@ -226,7 +300,7 @@ export function normalizeRecommendations(raw: unknown): RecommendationsData {
         }
       }
       const rawPriority = firstString(entry, ['priority', 'importance', 'severity']).toLowerCase()
-      const category = firstString(entry, ['category', 'type', 'area'])
+      const category = firstString(entry, ['category', 'type', 'area', 'placement'])
       items.push({
         title: decodeUnicodeEscapes(title),
         detail: decodeUnicodeEscapes(detail),
@@ -369,81 +443,113 @@ export function isCoverageEmpty(data: CoverageData): boolean {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Enhanced-article marker handling: <br> tags become real line breaks and
-// [+ADDED]…[/ADDED] spans are split into highlighted segments. The raw marker
-// tokens never reach the renderer, the clipboard, or exported documents.
+// ────────────────────────────────────────────────────────────────────────────
+// Enhanced-article [+ADDED]…[/ADDED] marker handling
+// ────────────────────────────────────────────────────────────────────────────
 
 const ADDED_OPEN = '[+ADDED]'
 const ADDED_CLOSE = '[/ADDED]'
 
-function normalizeBreaks(input: string): string {
-  return input.replace(/<br\s*\/?>/gi, '\n')
-}
-
 /**
  * Hides a partially streamed marker token at the very end of the text so the
- * literal bracket characters never flash on screen mid-stream.
+ * literal bracket characters never flash in the UI mid-stream.
  */
-function trimTrailingPartialMarker(text: string): string {
-  for (const token of [ADDED_OPEN, ADDED_CLOSE]) {
-    for (let len = token.length - 1; len >= 1; len--) {
-      if (text.endsWith(token.slice(0, len))) {
-        return text.slice(0, text.length - len)
-      }
+function trimPartialMarker(text: string): string {
+  const maxLen = Math.max(ADDED_OPEN.length, ADDED_CLOSE.length) - 1
+  for (let len = Math.min(text.length, maxLen); len > 0; len--) {
+    const tail = text.slice(text.length - len)
+    if (ADDED_OPEN.startsWith(tail) || ADDED_CLOSE.startsWith(tail)) {
+      return text.slice(0, text.length - len)
     }
   }
   return text
 }
 
 /**
- * Splits enhanced-article text into ordered segments on [+ADDED]…[/ADDED]
- * markers. Works progressively while streaming: an unclosed [+ADDED] span at
- * the tail is treated as an added segment so highlights render live.
+ * Splits enhanced-article text into plain and added segments using the
+ * [+ADDED]…[/ADDED] markers. Works progressively while streaming: an opening
+ * marker without its closing pair still highlights the trailing text.
  */
 export function splitArticleSegments(content: string): ArticleSegment[] {
-  const normalized = trimTrailingPartialMarker(normalizeBreaks(content))
+  const text = trimPartialMarker(content)
   const segments: ArticleSegment[] = []
-  let rest = normalized
+  let rest = text
   while (rest.length > 0) {
-    const openIdx = rest.indexOf(ADDED_OPEN)
-    if (openIdx === -1) {
+    const open = rest.indexOf(ADDED_OPEN)
+    if (open === -1) {
       segments.push({ text: rest, added: false })
       break
     }
-    if (openIdx > 0) {
-      segments.push({ text: rest.slice(0, openIdx), added: false })
-    }
-    const afterOpen = rest.slice(openIdx + ADDED_OPEN.length)
-    const closeIdx = afterOpen.indexOf(ADDED_CLOSE)
-    if (closeIdx === -1) {
+    if (open > 0) segments.push({ text: rest.slice(0, open), added: false })
+    const afterOpen = rest.slice(open + ADDED_OPEN.length)
+    const close = afterOpen.indexOf(ADDED_CLOSE)
+    if (close === -1) {
       if (afterOpen) segments.push({ text: afterOpen, added: true })
       break
     }
-    const inner = afterOpen.slice(0, closeIdx)
-    if (inner) segments.push({ text: inner, added: true })
-    rest = afterOpen.slice(closeIdx + ADDED_CLOSE.length)
+    if (close > 0) segments.push({ text: afterOpen.slice(0, close), added: true })
+    rest = afterOpen.slice(close + ADDED_CLOSE.length)
   }
   return segments.filter((segment) => segment.text.length > 0)
 }
 
 /**
- * Removes [+ADDED]…[/ADDED] markers entirely (keeping the text inside) and
- * converts <br> tags to real newlines — used for the clipboard and word count.
+ * Wraps one line of added markdown in <mark> while keeping list/heading/quote
+ * prefixes and table pipes OUTSIDE the tag so markdown structure still parses.
  */
-export function stripArticleMarkers(content: string): string {
-  return splitArticleSegments(content)
-    .map((segment) => segment.text)
+function highlightLine(line: string): string {
+  if (!line.trim()) return line
+  if (line.trimStart().startsWith('|')) {
+    return line
+      .split('|')
+      .map((cell) => {
+        const inner = cell.trim()
+        if (!inner) return cell
+        if (/^[-: ]+$/.test(inner)) return cell
+        return cell.replace(inner, `<mark>${inner}</mark>`)
+      })
+      .join('|')
+  }
+  const prefixMatch = line.match(/^(\s*(?:(?:[-*+]|\d+[.)]|#{1,6}|>)\s+)?)([\s\S]*)$/)
+  if (prefixMatch && prefixMatch[2].trim()) {
+    return `${prefixMatch[1]}<mark>${prefixMatch[2]}</mark>`
+  }
+  return `<mark>${line}</mark>`
+}
+
+function markAddedText(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => highlightLine(line))
+    .join('\n')
+}
+
+/**
+ * Converts <br> tags to markdown hard breaks OUTSIDE table rows (tables need
+ * their <br> cell separators preserved for GFM parsing).
+ */
+function convertLineBreaks(content: string): string {
+  return content
+    .split('\n')
+    .map((line) => (line.trimStart().startsWith('|') ? line : line.replace(/<br\s*\/?>/gi, '  \n')))
+    .join('\n')
+}
+
+/**
+ * Single shared preprocessing step for the article panel: normalizes <br>
+ * usage and converts [+ADDED]…[/ADDED] markers into inline <mark> highlights.
+ * Progressive while streaming — raw marker tokens never reach the renderer.
+ */
+export function preprocessArticleContent(content: string): string {
+  const normalized = convertLineBreaks(content)
+  return splitArticleSegments(normalized)
+    .map((segment) => (segment.added ? markAddedText(segment.text) : segment.text))
     .join('')
 }
 
 /**
- * Shared display preprocessing: <br> → real line breaks and [+ADDED]…[/ADDED]
- * → inline <mark> highlights (progressive while streaming). The raw marker
- * tokens never reach the renderer.
+ * Removes [+ADDED]/[/ADDED] marker tokens entirely (clipboard / word counts).
  */
-export function preprocessArticleContent(content: string): string {
-  return splitArticleSegments(content)
-    .map((segment) => (segment.added ? `<mark>${segment.text}</mark>` : segment.text))
-    .join('')
+export function stripArticleMarkers(content: string): string {
+  return trimPartialMarker(content).replace(/\[\+ADDED\]/g, '').replace(/\[\/ADDED\]/g, '')
 }
