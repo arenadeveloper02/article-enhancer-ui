@@ -1,9 +1,18 @@
+@import './arena-ds-tokens.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   color-scheme: light;
+  /* Arena DS core tokens */
+  --ds-brand-default: #1A73E8;
+  --ds-brand-hover: #145CBA;
+  --ds-brand-surface: #F3F8FE;
+  --ds-text-primary: #2C2D33;
+  --ds-text-secondary: #6D717F;
+  --ds-surface-subtle: #F7F8F9;
+  --ds-border-default: #E4E6EA;
 }
 
 body {
@@ -11,13 +20,13 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid #5b5bd6;
+  outline: 2px solid var(--ds-brand-default);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 .gradient-line {
-  background: linear-gradient(90deg, #5b5bd6, #8b5cf6, #c084fc, #5b5bd6);
+  background: linear-gradient(90deg, #1a73e8, #5c9def, #8dbbf4, #1a73e8);
   background-size: 250% 100%;
   animation: gradient-slide 1.8s linear infinite;
 }

@@ -1,21 +1,22 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-24T08:23:04.202Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-28T11:11:12.932Z.
 
 ## Overview
 
-Article Enhancer Agent
+AI-powered article enhancer that streams gap analysis, recommendations, an enhanced draft, and coverage verification live from the Arena workflow agent.
 
 **Repository:** `article-enhancer-ui`  
-**File count:** 35
+**File count:** 40
 
 ## Features
 
-- Streaming article enhancement with live Markdown output
+- Streaming enhancement pipeline with live stage checklist
+- Enhanced article with inline ADDED highlights and markdown rendering
 - Gap analysis, recommendations, and coverage verification panels
-- Optional article text fallback when the agent cannot scrape a page
-- Final-output recovery so Gap Analysis and Coverage Verification always populate
-- Printable export of the full enhancement report
+- Printable/exportable report of all results
+- Arena DS blue theme with Poppins typography
+- Prisma logging of enhancement requests
 
 ## Tech Stack
 
@@ -32,6 +33,7 @@ Article Enhancer Agent
 ## Routes & Pages
 
 - `/` — `app/page.tsx`
+- `/access-denied` — `app/access-denied/page.tsx`
 
 ## Database Models
 
@@ -41,6 +43,8 @@ Article Enhancer Agent
 
 ### App pages
 
+- `app/access-denied/page.tsx`
+- `app/arena-ds-tokens.css`
 - `app/error.tsx`
 - `app/globals.css`
 - `app/layout.tsx`
@@ -66,9 +70,12 @@ Article Enhancer Agent
 - `components/SectionHeader.tsx`
 - `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
+- `components/arena-email-provider.tsx`
 
 ### Libraries
 
+- `lib/arena-email-constants.ts`
+- `lib/arena-email.ts`
 - `lib/boilerplate.ts`
 - `lib/normalize.ts`
 - `lib/prisma.ts`
@@ -79,9 +86,9 @@ Article Enhancer Agent
 ### Config
 
 - `.env.example`
+- `middleware.ts`
 - `next-env.d.ts`
 - `next.config.ts`
-- `package-lock.json`
 - `package.json`
 - `postcss.config.mjs`
 - `tailwind.config.ts`
@@ -97,7 +104,9 @@ Article Enhancer Agent
 - `.env.example`
 - `README.md`
 - `REPO_SUMMARY.md`
+- `app/access-denied/page.tsx`
 - `app/api/enhance/route.ts`
+- `app/arena-ds-tokens.css`
 - `app/error.tsx`
 - `app/globals.css`
 - `app/layout.tsx`
@@ -116,14 +125,17 @@ Article Enhancer Agent
 - `components/SectionHeader.tsx`
 - `components/StageChecklist.tsx`
 - `components/StatusChip.tsx`
+- `components/arena-email-provider.tsx`
+- `lib/arena-email-constants.ts`
+- `lib/arena-email.ts`
 - `lib/boilerplate.ts`
 - `lib/normalize.ts`
 - `lib/prisma.ts`
 - `lib/stream.ts`
 - `lib/types.ts`
+- `middleware.ts`
 - `next-env.d.ts`
 - `next.config.ts`
-- `package-lock.json`
 - `package.json`
 - `postcss.config.mjs`
 - `prisma/schema.prisma`
@@ -132,34 +144,12 @@ Article Enhancer Agent
 
 ## Latest Change
 
-- **Updated at:** 2026-07-24T08:23:04.202Z
-- **Request:** === SCOPE LOCK: BUG-FIX-ONLY MODE ===
-This is a bug-fix request, not a redesign request. Apply ONLY the specific fix(es) described below. Do not use this as an opportunity to also improve, refactor, reposition, restyle, resize, reorder, rename, or "clean up" anything else in the app, even if you notice something else that looks improvable while you're in there.
+- **Updated at:** 2026-07-28T11:11:12.932Z
+- **Request:** change the theme, 
 
-Hard rules for this change:
-  1. Touch ONLY the code paths directly responsible for the bug(s) described below. If a fix requires touching a shared file (e.g. lib/normalize.ts, a shared Tabs component), edit only the specific function/section relevant to the bug — do not reformat, restructure, or "tidy" the rest of that file.
-  2. Do NOT change: layout structure, column/grid arrangement, tab order or grouping, section placement, spacing/padding values, colors, fonts, component hierarchy, or any element's position — UNLESS the bug report explicitly describes a layout/position/style problem. If it doesn't mention position or visuals, assume position and visuals are correct and untouchable.
-  3. Do NOT rename existing variables, interfaces, props, functions, or files as a "improvement" side-effect of the fix. Keep every existing name exactly as-is unless the bug itself is a naming/type mismatch.
-  4. Do NOT add new UI elements, badges, states, animations, or copy changes beyond what's minimally needed to fix the described behavior. If the fix requires a new state (e.g. an error state), keep its visual style consistent with existing patterns already in the app rather than introducing a new visual language.
-  5. If fixing the bug seems to require a layout or design change to work correctly, STOP and flag this explicitly back to me before making that change — don't silently decide a bigger change is "better" and do it anyway.
-  6. After making the fix, do a mental diff: everything in the UI that was NOT mentioned in the bug report should look and behave pixel-identical to before. If you can't be sure of that, say so rather than assuming it's fine.
-
-Bug(s) to fix in this change (and ONLY these):
+change the base URL from https://test-agent.thearena.ai/
+to   https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute
 
 
-- We need to always make sure that the data for Gap Aanalysis and coverage verification data appears
-
-Here is the API as mentioned earlier:
-
-
-curl -X POST \
-  -H "X-API-Key: $SIM_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"article_url":"example","article_text":"example","content_type":"example","stream":true,"selectedOutputs":["recommendations.recommendations","coverageverifier.criteria","coverageverifier.overall_score","coverageverifier.passed","coverageverifier.summary","gapanalysis.competitor_strengths","gapanalysis.coverage_gaps","gapanalysis.underdeveloped_sections","enhancedarticlewriter.content"]}' \
-  https://test-agent.thearena.ai/api/workflows/9aafe5d7-1d24-477a-ad3f-0be9bf79c04f/execute
-
-
-
-And also the input "Article text" is optional field
-
-The article text input field is a fallback if the agent cannot scrape a page.
+and change the API key to 
+sk-sim-Vk9yj3QfVSZxJ8lulZTYK549u5ThZo9u

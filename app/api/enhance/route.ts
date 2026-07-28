@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const UPSTREAM_URL =
-  'https://test-agent.thearena.ai/api/workflows/9aafe5d7-1d24-477a-ad3f-0be9bf79c04f/execute'
-const SIM_API_KEY = 'sk-sim-jYKjvV7VAToCX_MNfI00-2sGNmcyDZAS'
+  'https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute'
+const SIM_API_KEY = 'sk-sim-Vk9yj3QfVSZxJ8lulZTYK549u5ThZo9u'
 
 const SELECTED_OUTPUTS = [
   'recommendations.recommendations',

@@ -1,9 +1,14 @@
+import { getArenaEmailId } from '@/lib/arena-email'
+import { ArenaEmailProvider } from '@/components/arena-email-provider'
 import type { Metadata } from 'next'
-import { Inter, Space_Grotesk } from 'next/font/google'
+import { Poppins } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
-const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-display' })
+const poppins = Poppins({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sans',
+})
 
 export const metadata: Metadata = {
   title: 'Article Enhancer Agent',
@@ -11,11 +16,13 @@ export const metadata: Metadata = {
     'Paste an article, pick a content type, and watch an AI agent enhance it live with streaming Markdown output.',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const emailId = await getArenaEmailId()
+
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${spaceGrotesk.variable} bg-surface font-sans text-ink antialiased`}>
-        {children}
+      <body className={`${poppins.variable} ${poppins.className} bg-surface font-sans text-ink antialiased`}>
+        <ArenaEmailProvider emailId={emailId}>{children}</ArenaEmailProvider>
       </body>
     </html>
   )
