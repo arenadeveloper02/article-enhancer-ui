@@ -69,3 +69,16 @@ export interface ArticleSegment {
   text: string
   added: boolean
 }
+
+// A single saved run shown in the History view, normalized from the upstream
+// build-history workflow response (tolerant of varying key names). History is
+// fetched fresh each time the view mounts — the client keeps it only in
+// in-memory React state, so it resets on page reload.
+export interface HistoryEntry {
+  id: string
+  keyword: string
+  client: string
+  timestamp: string | null
+  preview: string
+  content: string
+}

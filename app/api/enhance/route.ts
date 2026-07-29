@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { getArenaEmailId } from '@/lib/arena-email'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,6 +24,7 @@ interface IncomingBody {
   article_url?: unknown
   article_text?: unknown
   content_type?: unknown
+  email?: unknown
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -44,8 +46,16 @@ export async function POST(request: Request): Promise<Response> {
     )
   }
 
+  // Resolve the Arena email for this visitor: an explicit value in the body
+  // wins, otherwise fall back to the arena_email_id cookie set by middleware.
+  const emailFromBody = typeof body.email === 'string' ? body.email.trim() : ''
+  const emailFromCookie = (await getArenaEmailId()) ?? ''
+  const email = emailFromBody || emailFromCookie
+
   try {
-    await prisma.enhancementLog.create({ data: { articleUrl, contentType } })
+    await prisma.enhancementLog.create({
+      data: { articleUrl, contentType, email: email || null },
+    })
   } catch {
     // Logging is non-critical — never block the enhancement request.
   }
@@ -62,6 +72,7 @@ export async function POST(request: Request): Promise<Response> {
         article_url: articleUrl,
         article_text: articleText,
         content_type: contentType,
+        email,
         stream: true,
         selectedOutputs: SELECTED_OUTPUTS,
       }),

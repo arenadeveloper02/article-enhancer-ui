@@ -24,11 +24,7 @@ import {
 } from '@/lib/stream'
 import {
   decodeUnicodeEscapes,
-  extractArticleContent,
   extractBalancedJson,
-  isCoverageEmpty,
-  isGapAnalysisEmpty,
-  isRecommendationsEmpty,
   normalizeCoverage,
   normalizeGapAnalysis,
   normalizeRecommendations,
@@ -142,6 +138,78 @@ function extractKeyValue(text: string, key: string): unknown {
       }
     }
     from = idx + token.length
+  }
+  return undefined
+}
+
+/** Extracts a plain article string from an arbitrary payload value. */
+function articleTextFrom(value: unknown): string {
+  if (typeof value === 'string') return value
+  const rec = asRecord(value)
+  if (rec) {
+    for (const key of ['content', 'article', 'enhanced_article', 'markdown', 'text', 'body']) {
+      const inner = rec[key]
+      if (typeof inner === 'string' && inner.trim()) return inner
+    }
+  }
+  return ''
+}
+
+/**
+ * Derives displayable article text from accumulated stream text. Handles both
+ * plain markdown chunks and JSON-wrapped payloads like {"content":"..."}
+ * (including progressive, not-yet-closed JSON while streaming).
+ */
+function articleFromAccumulated(accumulated: string): string {
+  const trimmed = accumulated.trim()
+  if (trimmed.startsWith('{')) {
+    const value = extractKeyValue(trimmed, 'content')
+    if (typeof value === 'string' && value.trim()) return value
+    const match = trimmed.match(/^\{\s*"content"\s*:\s*"([\s\S]*)$/)
+    if (match) {
+      const partial = match[1].replace(/"\s*\}?\s*$/, '')
+      return decodeUnicodeEscapes(partial.replace(/\\n/g, '\n').replace(/\\"/g, '"'))
+    }
+  }
+  return accumulated
+}
+
+function isGapEmpty(data: GapAnalysisData): boolean {
+  return (
+    data.competitor_strengths.length === 0 &&
+    data.coverage_gaps.length === 0 &&
+    data.underdeveloped_sections.length === 0
+  )
+}
+
+function isCovEmpty(data: CoverageData): boolean {
+  return (
+    data.overall_score === null &&
+    data.passed === null &&
+    data.summary === null &&
+    data.criteria.length === 0
+  )
+}
+
+/** Tolerant lookup across merged structured outputs (exact, dotted, nested). */
+function findMergedValue(merged: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const lower = key.toLowerCase()
+    if (lower in merged) return merged[lower]
+  }
+  for (const [entryKey, entryValue] of Object.entries(merged)) {
+    for (const key of keys) {
+      const lower = key.toLowerCase()
+      const short = lower.split('.').pop() ?? lower
+      if (entryKey.endsWith(`.${short}`)) return entryValue
+    }
+    const rec = asRecord(entryValue)
+    if (rec) {
+      for (const key of keys) {
+        const short = key.toLowerCase().split('.').pop() ?? ''
+        if (short && short in rec) return rec[short]
+      }
+    }
   }
   return undefined
 }
@@ -318,7 +386,7 @@ export function EnhancerClient() {
     setGapData(null)
     setRecData(null)
     setCoverage(null)
-    setStages({ ...INITIAL_STAGES })
+    setStages({ ...INITIAL_STAGES, gapanalysis: 'active' })
     setSections({ ...INITIAL_SECTIONS })
     setErrorMessage('')
     setStatusMessage('Contacting the enhancement service…')
@@ -331,290 +399,291 @@ export function EnhancerClient() {
     setSections((prev) => (prev[key] === status ? prev : { ...prev, [key]: status }))
   }
 
-  function activateStage(id: StageId): void {
+  function markStageActive(id: StageId): void {
     setStages((prev) => {
+      if (prev[id] === 'done' || prev[id] === 'active') return prev
       const next: Record<StageId, StageStatus> = { ...prev }
       const idx = STAGE_ORDER.indexOf(id)
-      for (let i = 0; i < idx; i++) {
-        const earlier = STAGE_ORDER[i]
-        if (next[earlier] !== 'done') next[earlier] = 'done'
-      }
-      if (next[id] === 'pending') next[id] = 'active'
+      STAGE_ORDER.forEach((stage, i) => {
+        if (i < idx && next[stage] !== 'done') next[stage] = 'done'
+      })
+      next[id] = 'active'
       return next
     })
   }
 
-  function applyPanelData(panel: PanelKey): void {
-    const accum = targetAccumRef.current[panel]
-    if (!accum.trim()) return
-    if (panel === 'article') {
-      const extracted: unknown = extractArticleContent(accum)
-      if (typeof extracted === 'string' && extracted.trim()) {
-        setContent(extracted)
+  function applyGapPayload(raw: unknown): void {
+    const data = normalizeGapAnalysis(raw)
+    if (isGapEmpty(data)) return
+    gapRef.current = data
+    setGapData(data)
+    dataPresentRef.current.gapanalysis = true
+    markSection('gapanalysis', 'streaming')
+  }
+
+  function applyRecPayload(raw: unknown): void {
+    const data = normalizeRecommendations(raw)
+    if (data.recommendations.length === 0) return
+    recRef.current = data
+    setRecData(data)
+    dataPresentRef.current.recommendations = true
+    markSection('recommendations', 'streaming')
+  }
+
+  function applyCoveragePayload(raw: unknown): void {
+    const data = normalizeCoverage(raw)
+    if (isCovEmpty(data)) return
+    covRef.current = data
+    setCoverage(data)
+    dataPresentRef.current.coverage = true
+    markSection('coverage', 'streaming')
+  }
+
+  function routeAccumulated(target: BlockTarget, accumulated: string): void {
+    if (target === 'status-theme' || target === 'status-research') {
+      setStatusMessage(statusLabelFor(target))
+      return
+    }
+    if (target === 'article') {
+      const display = articleFromAccumulated(accumulated)
+      if (display.trim()) {
+        targetAccumRef.current.article = display
         dataPresentRef.current.article = true
+        setContent(display)
+        markSection('article', 'streaming')
+        markStageActive('enhancedarticlewriter')
       }
       return
     }
-    if (panel === 'gapanalysis') {
-      const normalized = normalizeGapAnalysis(accum)
-      if (!isGapAnalysisEmpty(normalized)) {
-        gapRef.current = normalized
-        setGapData(normalized)
-        dataPresentRef.current.gapanalysis = true
-      }
-      return
-    }
-    if (panel === 'recommendations') {
-      const normalized = normalizeRecommendations(accum)
-      if (!isRecommendationsEmpty(normalized)) {
-        recRef.current = normalized
-        setRecData(normalized)
-        dataPresentRef.current.recommendations = true
-      }
-      return
-    }
-    const normalized = normalizeCoverage(accum)
-    if (!isCoverageEmpty(normalized)) {
-      covRef.current = normalized
-      setCoverage(normalized)
-      dataPresentRef.current.coverage = true
+    targetAccumRef.current[target] = accumulated
+    markSection(target, 'streaming')
+    markStageActive(STAGE_FOR_PANEL[target])
+    if (target === 'gapanalysis') {
+      applyGapPayload(accumulated)
+    } else if (target === 'recommendations') {
+      applyRecPayload(accumulated)
+    } else {
+      applyCoveragePayload(accumulated)
     }
   }
 
-  function routeToPanel(panel: PanelKey, text: string): void {
-    targetAccumRef.current[panel] += text
-    activateStage(STAGE_FOR_PANEL[panel])
-    markSection(panel, 'streaming')
-    setStatusMessage(`${STAGE_LABELS[STAGE_FOR_PANEL[panel]]}…`)
-    applyPanelData(panel)
+  function applyMergedOutputs(): void {
+    const merged = finalOutputRef.current
+    if (!merged) return
+    const articleVal = findMergedValue(merged, [
+      'enhancedarticlewriter.content',
+      'enhancedarticlewriter',
+      'content',
+      'article',
+    ])
+    const articleTextValue = articleTextFrom(articleVal)
+    if (articleTextValue.trim() && articleTextValue.trim().length > targetAccumRef.current.article.trim().length) {
+      targetAccumRef.current.article = articleTextValue
+      dataPresentRef.current.article = true
+      setContent(articleTextValue)
+      markSection('article', 'streaming')
+    }
+    const gapStrengths = findMergedValue(merged, ['gapanalysis.competitor_strengths', 'competitor_strengths'])
+    const gapGaps = findMergedValue(merged, ['gapanalysis.coverage_gaps', 'coverage_gaps'])
+    const gapUnder = findMergedValue(merged, ['gapanalysis.underdeveloped_sections', 'underdeveloped_sections'])
+    if (gapStrengths !== undefined || gapGaps !== undefined || gapUnder !== undefined) {
+      applyGapPayload({
+        competitor_strengths: gapStrengths,
+        coverage_gaps: gapGaps,
+        underdeveloped_sections: gapUnder,
+      })
+    } else {
+      const gapWhole = findMergedValue(merged, ['gapanalysis'])
+      if (gapWhole !== undefined) applyGapPayload(gapWhole)
+    }
+    const recVal = findMergedValue(merged, ['recommendations.recommendations', 'recommendations'])
+    if (recVal !== undefined) applyRecPayload(recVal)
+    const covScore = findMergedValue(merged, ['coverageverifier.overall_score', 'overall_score'])
+    const covPassed = findMergedValue(merged, ['coverageverifier.passed', 'passed'])
+    const covSummary = findMergedValue(merged, ['coverageverifier.summary', 'summary'])
+    const covCriteria = findMergedValue(merged, ['coverageverifier.criteria', 'criteria'])
+    if (
+      covScore !== undefined ||
+      covPassed !== undefined ||
+      covSummary !== undefined ||
+      covCriteria !== undefined
+    ) {
+      applyCoveragePayload({
+        overall_score: covScore,
+        passed: covPassed,
+        summary: covSummary,
+        criteria: covCriteria,
+      })
+    } else {
+      const covWhole = findMergedValue(merged, ['coverageverifier'])
+      if (covWhole !== undefined) applyCoveragePayload(covWhole)
+    }
   }
 
-  function applyFinalOutput(): void {
-    const output = finalOutputRef.current
-    if (!output) return
-    if (!dataPresentRef.current.article) {
-      for (const [key, value] of Object.entries(output)) {
-        const lower = key.toLowerCase()
-        const isArticleKey =
-          lower.endsWith('content') || lower.includes('article') || lower.includes('writer')
-        if (isArticleKey && typeof value === 'string' && value.trim().length > 40) {
-          setContent(decodeUnicodeEscapes(value))
-          dataPresentRef.current.article = true
-          markSection('article', doneRef.current ? 'done' : 'streaming')
-          break
-        }
-      }
-    }
-    if (!dataPresentRef.current.gapanalysis) {
-      const normalized = normalizeGapAnalysis(output)
-      if (!isGapAnalysisEmpty(normalized)) {
-        gapRef.current = normalized
-        setGapData(normalized)
-        dataPresentRef.current.gapanalysis = true
-        markSection('gapanalysis', doneRef.current ? 'done' : 'streaming')
-      }
-    }
-    if (!dataPresentRef.current.recommendations) {
-      const normalized = normalizeRecommendations(output)
-      if (!isRecommendationsEmpty(normalized)) {
-        recRef.current = normalized
-        setRecData(normalized)
-        dataPresentRef.current.recommendations = true
-        markSection('recommendations', doneRef.current ? 'done' : 'streaming')
-      }
-    }
-    if (!dataPresentRef.current.coverage) {
-      const normalized = normalizeCoverage(output)
-      if (!isCoverageEmpty(normalized)) {
-        covRef.current = normalized
-        setCoverage(normalized)
-        dataPresentRef.current.coverage = true
-        markSection('coverage', doneRef.current ? 'done' : 'streaming')
-      }
-    }
-  }
-
-  function mergeStructured(record: Record<string, unknown>): void {
+  function mergeStructured(obj: Record<string, unknown>): void {
     const merged: Record<string, unknown> = finalOutputRef.current ?? {}
     let changed = false
-    const visit = (obj: Record<string, unknown>): void => {
-      for (const [key, value] of Object.entries(obj)) {
+    const visit = (source: Record<string, unknown>, depth: number): void => {
+      if (depth > 4) return
+      for (const [key, value] of Object.entries(source)) {
         const lower = key.toLowerCase()
         if (RESERVED_KEYS.has(lower)) continue
-        const resolved = parseIfJsonLike(value)
         if (lower === 'output' || lower === 'outputs' || lower === 'result' || lower === 'data') {
-          const inner = asRecord(resolved)
-          if (inner) {
-            visit(inner)
-            continue
-          }
+          const inner = asRecord(parseIfJsonLike(value))
+          if (inner) visit(inner, depth + 1)
+          continue
         }
-        merged[key] = resolved
+        merged[lower] = parseIfJsonLike(value)
         changed = true
       }
     }
-    visit(record)
+    visit(obj, 0)
     if (changed) {
       finalOutputRef.current = merged
-      applyFinalOutput()
+      applyMergedOutputs()
     }
   }
 
-  function salvage(): void {
-    const raw = `${rawTranscriptRef.current}\n${looseTextRef.current}`
-    for (const accum of Object.values(blockAccumRef.current)) {
-      if (!accum.trim()) continue
-      const target = classifyUnknownPayload(accum)
-      if (!target || dataPresentRef.current[target]) continue
-      targetAccumRef.current[target] += accum
-      applyPanelData(target)
+  function handleEventObject(obj: Record<string, unknown>): void {
+    const eventType =
+      typeof obj.event === 'string' ? obj.event : typeof obj.type === 'string' ? obj.type : ''
+    if (eventType.toLowerCase() === 'error' || obj.success === false) {
+      const msg =
+        typeof obj.error === 'string'
+          ? obj.error
+          : typeof obj.message === 'string'
+            ? obj.message
+            : ''
+      if (msg) streamErrorRef.current = msg
     }
-    if (!dataPresentRef.current.article) {
-      const value = extractKeyValue(raw, 'content')
-      if (typeof value === 'string' && value.trim().length > 40) {
-        setContent(decodeUnicodeEscapes(value))
-        dataPresentRef.current.article = true
-      }
+    if (typeof obj.message === 'string' && isHeartbeatMessage(obj.message)) {
+      setStatusMessage(obj.message.trim())
     }
-    if (!dataPresentRef.current.gapanalysis) {
-      const normalized = normalizeGapAnalysis({
-        competitor_strengths: extractKeyValue(raw, 'competitor_strengths'),
-        coverage_gaps: extractKeyValue(raw, 'coverage_gaps'),
-        underdeveloped_sections: extractKeyValue(raw, 'underdeveloped_sections'),
-      })
-      if (!isGapAnalysisEmpty(normalized)) {
-        gapRef.current = normalized
-        setGapData(normalized)
-        dataPresentRef.current.gapanalysis = true
+    const blockId =
+      typeof obj.blockId === 'string'
+        ? obj.blockId
+        : typeof obj.block_id === 'string'
+          ? obj.block_id
+          : typeof obj.blockName === 'string'
+            ? obj.blockName
+            : ''
+    const chunkText =
+      typeof obj.chunk === 'string'
+        ? obj.chunk
+        : typeof obj.delta === 'string'
+          ? obj.delta
+          : typeof obj.text === 'string'
+            ? obj.text
+            : ''
+    if (blockId && chunkText) {
+      const key = blockId.trim().toLowerCase()
+      blockAccumRef.current[key] = (blockAccumRef.current[key] ?? '') + chunkText
+      let target: BlockTarget | null = blockTargetRef.current[key] ?? resolveBlockTarget(blockId)
+      if (!target) {
+        target = classifyUnknownPayload(blockAccumRef.current[key])
       }
+      if (target) {
+        blockTargetRef.current[key] = target
+        routeAccumulated(target, blockAccumRef.current[key])
+      }
+      return
     }
-    if (!dataPresentRef.current.recommendations) {
-      const value = extractKeyValue(raw, 'recommendations')
-      const normalized = normalizeRecommendations(
-        value !== undefined ? { recommendations: value } : looseTextRef.current,
-      )
-      if (!isRecommendationsEmpty(normalized)) {
-        recRef.current = normalized
-        setRecData(normalized)
-        dataPresentRef.current.recommendations = true
+    if (chunkText) {
+      if (isHeartbeatMessage(chunkText)) {
+        setStatusMessage(chunkText.trim())
+        return
       }
+      looseTextRef.current += chunkText
+      const classified = classifyUnknownPayload(looseTextRef.current)
+      if (classified) routeAccumulated(classified, looseTextRef.current)
+      return
     }
-    if (!dataPresentRef.current.coverage) {
-      const normalized = normalizeCoverage({
-        overall_score: extractKeyValue(raw, 'overall_score'),
-        passed: extractKeyValue(raw, 'passed'),
-        summary: extractKeyValue(raw, 'summary'),
-        criteria: extractKeyValue(raw, 'criteria'),
-      })
-      if (!isCoverageEmpty(normalized)) {
-        covRef.current = normalized
-        setCoverage(normalized)
-        dataPresentRef.current.coverage = true
-      }
+    mergeStructured(obj)
+  }
+
+  function processLine(rawLine: string): void {
+    const line = rawLine.trim()
+    if (!line) return
+    const data = line.startsWith('data:') ? line.slice(5).trim() : line
+    if (!data) return
+    if (data === '[DONE]') {
+      finalize()
+      return
+    }
+    rawTranscriptRef.current += `\n${data}`
+    const parsed = extractBalancedJson(data)
+    const rec = asRecord(parsed)
+    if (rec) {
+      handleEventObject(rec)
+      return
+    }
+    if (!isHeartbeatMessage(data)) {
+      looseTextRef.current += `\n${data}`
+      const classified = classifyUnknownPayload(looseTextRef.current)
+      if (classified) routeAccumulated(classified, looseTextRef.current)
+    } else {
+      setStatusMessage(data)
     }
   }
 
   function finalize(): void {
     if (doneRef.current) return
     doneRef.current = true
-    applyFinalOutput()
-    salvage()
+    const transcript = rawTranscriptRef.current
+    if (transcript) {
+      if (!dataPresentRef.current.article) {
+        const value = extractKeyValue(transcript, 'content')
+        if (typeof value === 'string' && value.trim()) {
+          targetAccumRef.current.article = value
+          dataPresentRef.current.article = true
+          setContent(value)
+        }
+      }
+      if (!dataPresentRef.current.gapanalysis) {
+        applyGapPayload({
+          competitor_strengths: extractKeyValue(transcript, 'competitor_strengths'),
+          coverage_gaps: extractKeyValue(transcript, 'coverage_gaps'),
+          underdeveloped_sections: extractKeyValue(transcript, 'underdeveloped_sections'),
+        })
+      }
+      if (!dataPresentRef.current.recommendations) {
+        const value = extractKeyValue(transcript, 'recommendations')
+        if (value !== undefined) applyRecPayload(value)
+      }
+      if (!dataPresentRef.current.coverage) {
+        applyCoveragePayload({
+          overall_score: extractKeyValue(transcript, 'overall_score'),
+          passed: extractKeyValue(transcript, 'passed'),
+          summary: extractKeyValue(transcript, 'summary'),
+          criteria: extractKeyValue(transcript, 'criteria'),
+        })
+      }
+    }
+    const present = dataPresentRef.current
+    const anyData = present.article || present.gapanalysis || present.recommendations || present.coverage
+    if (!anyData) {
+      setErrorMessage(
+        streamErrorRef.current ||
+          'The enhancement service finished without returning any output. Please try again.',
+      )
+      setStatusMessage('')
+      setPhase('error')
+      return
+    }
+    setSections({
+      article: present.article ? 'done' : 'empty',
+      gapanalysis: present.gapanalysis ? 'done' : 'empty',
+      recommendations: present.recommendations ? 'done' : 'empty',
+      coverage: present.coverage ? 'done' : 'empty',
+    })
     setStages({
       gapanalysis: 'done',
       recommendations: 'done',
       enhancedarticlewriter: 'done',
       coverageverifier: 'done',
     })
-    setSections({
-      article: dataPresentRef.current.article ? 'done' : 'empty',
-      gapanalysis: dataPresentRef.current.gapanalysis ? 'done' : 'empty',
-      recommendations: dataPresentRef.current.recommendations ? 'done' : 'empty',
-      coverage: dataPresentRef.current.coverage ? 'done' : 'empty',
-    })
-    const anyData = Object.values(dataPresentRef.current).some(Boolean)
-    if (streamErrorRef.current && !anyData) {
-      setErrorMessage(streamErrorRef.current)
-      setPhase('error')
-    } else {
-      setPhase('done')
-    }
     setStatusMessage('')
-  }
-
-  function handleEvent(parsed: unknown): void {
-    if (typeof parsed === 'string') {
-      const trimmed = parsed.trim()
-      if (trimmed === '[DONE]') {
-        finalize()
-        return
-      }
-      rawTranscriptRef.current += `${parsed}\n`
-      if (trimmed && !isHeartbeatMessage(trimmed)) looseTextRef.current += `${parsed}\n`
-      return
-    }
-    const record = asRecord(parsed)
-    if (!record) return
-    try {
-      rawTranscriptRef.current += `${JSON.stringify(record)}\n`
-    } catch {
-      // Ignore serialization failures for the salvage transcript.
-    }
-    if (typeof record.error === 'string' && record.error.trim()) {
-      streamErrorRef.current = record.error.trim()
-    }
-    if (record.done === true || record.event === 'done' || record.type === 'done') {
-      mergeStructured(record)
-      finalize()
-      return
-    }
-    const blockIdRaw = record.blockId ?? record.block_id ?? record.blockName ?? record.blockname
-    const blockId = typeof blockIdRaw === 'string' ? blockIdRaw : ''
-    const chunkRaw = record.chunk ?? record.delta ?? record.text
-    const chunk = typeof chunkRaw === 'string' ? chunkRaw : ''
-    if (blockId && chunk) {
-      const cached: BlockTarget | undefined = blockTargetRef.current[blockId]
-      const target = cached ?? resolveBlockTarget(blockId)
-      if (target) {
-        blockTargetRef.current[blockId] = target
-        if (target === 'status-theme' || target === 'status-research') {
-          setStatusMessage(statusLabelFor(target))
-          return
-        }
-        routeToPanel(target, chunk)
-        return
-      }
-      const accumulated = (blockAccumRef.current[blockId] ?? '') + chunk
-      blockAccumRef.current[blockId] = accumulated
-      const classified = classifyUnknownPayload(accumulated)
-      if (classified) {
-        blockTargetRef.current[blockId] = classified
-        blockAccumRef.current[blockId] = ''
-        routeToPanel(classified, accumulated)
-      }
-      return
-    }
-    const messageRaw = record.message ?? record.status
-    if (typeof messageRaw === 'string' && messageRaw.trim() && messageRaw.trim().length <= 200) {
-      setStatusMessage(messageRaw.trim())
-    }
-    mergeStructured(record)
-  }
-
-  function processLine(rawLine: string): void {
-    const line = rawLine.trim()
-    if (!line) return
-    const payload = line.startsWith('data:') ? line.slice(5).trim() : line
-    if (!payload) return
-    if (payload === '[DONE]') {
-      finalize()
-      return
-    }
-    try {
-      handleEvent(JSON.parse(payload) as unknown)
-    } catch {
-      rawTranscriptRef.current += `${payload}\n`
-      if (!isHeartbeatMessage(payload)) looseTextRef.current += `${payload}\n`
-    }
+    setPhase('done')
   }
 
   async function runEnhancement(payload: EnhancePayload): Promise<void> {
@@ -623,37 +692,33 @@ export function EnhancerClient() {
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      const response = await fetch('/api/enhance', {
+      const res = await fetch('/api/enhance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: controller.signal,
       })
-      if (!response.ok) {
-        let detail = ''
-        try {
-          const errBody = (await response.json()) as { error?: unknown }
-          if (typeof errBody.error === 'string') detail = errBody.error
-        } catch {
-          detail = ''
-        }
-        throw new Error(detail || `The enhancement service returned an error (${response.status}).`)
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(body?.error || `The enhancement service returned an error (${res.status}).`)
       }
-      const contentTypeHeader = response.headers.get('content-type') ?? ''
-      if (contentTypeHeader.includes('application/json')) {
-        const json = (await response.json()) as unknown
-        handleEvent(json)
+      const resContentType = res.headers.get('content-type') ?? ''
+      if (resContentType.includes('application/json')) {
+        const data: unknown = await res.json()
+        rawTranscriptRef.current += JSON.stringify(data)
+        const rec = asRecord(data)
+        if (rec) mergeStructured(rec)
         finalize()
         return
       }
-      if (!response.body) {
+      if (!res.body) {
         throw new Error('The enhancement service returned an empty response.')
       }
-      const reader = response.body.getReader()
+      const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       for (;;) {
-        const { done, value } = await reader.read()
+        const { value, done } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
         let newlineIndex = buffer.indexOf('\n')
@@ -666,24 +731,13 @@ export function EnhancerClient() {
         }
         if (doneRef.current) break
       }
-      if (!doneRef.current) {
-        buffer += decoder.decode()
-        if (buffer.trim()) processLine(buffer)
-        finalize()
-      }
+      if (!doneRef.current && buffer.trim()) processLine(buffer)
+      finalize()
     } catch (err) {
       if (controller.signal.aborted) return
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : 'Something went wrong while streaming the enhancement.'
-      streamErrorRef.current = message
-      if (!doneRef.current) {
-        doneRef.current = true
-        setErrorMessage(message)
-        setPhase('error')
-        setStatusMessage('')
-      }
+      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      setStatusMessage('')
+      setPhase('error')
     }
   }
 
@@ -691,11 +745,10 @@ export function EnhancerClient() {
     event.preventDefault()
     if (phase === 'streaming') return
     if (!validate()) return
-    const resolvedType = contentType === 'Other' ? otherType.trim() : contentType
     const payload: EnhancePayload = {
       article_url: articleUrl.trim(),
       article_text: articleText.trim(),
-      content_type: resolvedType,
+      content_type: contentType === 'Other' ? otherType.trim() : contentType,
     }
     lastPayloadRef.current = payload
     void runEnhancement(payload)
@@ -706,22 +759,18 @@ export function EnhancerClient() {
     if (payload) {
       void runEnhancement(payload)
     } else {
-      setPhase('idle')
       setErrorMessage('')
+      setPhase('idle')
     }
   }
 
-  function handleCancel(): void {
-    abortRef.current?.abort()
-    if (!doneRef.current) finalize()
-  }
-
   function handleExport(): void {
-    const html = buildPrintableHtml(content, gapRef.current, recRef.current, covRef.current)
+    const html = buildPrintableHtml(content, gapData, recData, coverage)
     const win = window.open('', '_blank')
     if (!win) return
     win.document.write(html)
     win.document.close()
+    win.focus()
   }
 
   const checklistStages: ChecklistStage[] = STAGE_ORDER.map((id) => ({
@@ -730,82 +779,32 @@ export function EnhancerClient() {
     status: stages[id],
   }))
 
-  const showResults = phase === 'streaming' || phase === 'done'
-
   return (
-    <div className="w-full space-y-6">
-      <form
-        onSubmit={handleSubmit}
-        noValidate
-        className="card-enter rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6"
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <section
+        aria-label="Article input"
+        className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
       >
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-5">
-            <div>
-              <label
-                htmlFor="article-url"
-                className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
-              >
-                Article URL
-              </label>
-              <input
-                id="article-url"
-                type="url"
-                value={articleUrl}
-                onChange={(event) => setArticleUrl(event.target.value)}
-                placeholder="https://example.com/blog/my-post"
-                disabled={phase === 'streaming'}
-                className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
-              />
-              {errors.articleUrl ? (
-                <p className="mt-1 text-xs text-rose-600">{errors.articleUrl}</p>
-              ) : null}
-            </div>
-            <div>
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft">
-                Content type
-              </span>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Content type">
-                {CONTENT_TYPES.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setContentType(type)}
-                    aria-pressed={contentType === type}
-                    disabled={phase === 'streaming'}
-                    className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
-                      contentType === type
-                        ? 'border-accent bg-indigo-50 text-accent-deep'
-                        : 'border-slate-200 bg-white text-ink-soft hover:border-indigo-200 hover:text-ink'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-              {errors.contentType ? (
-                <p className="mt-1 text-xs text-rose-600">{errors.contentType}</p>
-              ) : null}
-              {contentType === 'Other' ? (
-                <div className="mt-2">
-                  <label htmlFor="other-type" className="sr-only">
-                    Describe your content type
-                  </label>
-                  <input
-                    id="other-type"
-                    type="text"
-                    value={otherType}
-                    onChange={(event) => setOtherType(event.target.value)}
-                    placeholder="Describe your content type"
-                    disabled={phase === 'streaming'}
-                    className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
-                  />
-                  {errors.otherType ? (
-                    <p className="mt-1 text-xs text-rose-600">{errors.otherType}</p>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+        <form onSubmit={handleSubmit} noValidate className="space-y-5">
+          <div>
+            <label
+              htmlFor="article-url"
+              className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+            >
+              Article URL
+            </label>
+            <input
+              id="article-url"
+              type="url"
+              value={articleUrl}
+              onChange={(event) => setArticleUrl(event.target.value)}
+              placeholder="https://example.com/blog/my-post"
+              aria-invalid={Boolean(errors.articleUrl)}
+              className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
+            />
+            {errors.articleUrl ? (
+              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleUrl}</p>
+            ) : null}
           </div>
           <div>
             <label
@@ -816,57 +815,98 @@ export function EnhancerClient() {
             </label>
             <textarea
               id="article-text"
-              rows={9}
+              rows={10}
               value={articleText}
               onChange={(event) => setArticleText(event.target.value)}
               placeholder="Paste the full article text here…"
-              disabled={phase === 'streaming'}
-              className={`${inputBase} min-h-[200px] resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
+              aria-invalid={Boolean(errors.articleText)}
+              className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
             />
             {errors.articleText ? (
-              <p className="mt-1 text-xs text-rose-600">{errors.articleText}</p>
+              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleText}</p>
             ) : null}
           </div>
-        </div>
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={phase === 'streaming'}
-            className="inline-flex items-center justify-center rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {phase === 'streaming' ? 'Enhancing…' : 'Enhance article'}
-          </button>
-          {phase === 'streaming' ? (
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="content-type"
+                className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+              >
+                Content type
+              </label>
+              <select
+                id="content-type"
+                value={contentType}
+                onChange={(event) => setContentType(event.target.value)}
+                aria-invalid={Boolean(errors.contentType)}
+                className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'}`}
+              >
+                <option value="">Select a content type…</option>
+                {CONTENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              {errors.contentType ? (
+                <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.contentType}</p>
+              ) : null}
+            </div>
+            {contentType === 'Other' && (
+              <div>
+                <label
+                  htmlFor="other-type"
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+                >
+                  Describe the content type
+                </label>
+                <input
+                  id="other-type"
+                  type="text"
+                  value={otherType}
+                  onChange={(event) => setOtherType(event.target.value)}
+                  placeholder="e.g. Case Study"
+                  aria-invalid={Boolean(errors.otherType)}
+                  className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
+                />
+                {errors.otherType ? (
+                  <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.otherType}</p>
+                ) : null}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
             <button
-              type="button"
-              onClick={handleCancel}
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:border-rose-200 hover:text-rose-600"
+              type="submit"
+              disabled={phase === 'streaming'}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Cancel
+              {phase === 'streaming' ? 'Enhancing…' : 'Get Recommendations'}
             </button>
-          ) : null}
-          {phase === 'done' && content.trim() ? (
-            <button
-              type="button"
-              onClick={handleExport}
-              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep"
-            >
-              Export / Print
-            </button>
-          ) : null}
-          {phase === 'streaming' ? (
-            <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
-          ) : null}
-        </div>
-      </form>
+            {phase === 'streaming' && (
+              <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
+            )}
+          </div>
+        </form>
+      </section>
 
-      {phase === 'error' ? (
-        <ErrorCard message={errorMessage || 'Something went wrong.'} onRetry={handleRetry} />
-      ) : null}
+      {phase === 'streaming' && <ProgressChecklist stages={checklistStages} />}
 
-      {showResults ? (
-        <>
-          <ProgressChecklist stages={checklistStages} />
+      {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
+
+      {(phase === 'streaming' || phase === 'done') && (
+        <div className="flex flex-col gap-4">
+          {phase === 'done' && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleExport}
+                className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Export / Print
+              </button>
+            </div>
+          )}
           <ResultTabs
             content={content}
             articleStatus={sections.article}
@@ -878,8 +918,8 @@ export function EnhancerClient() {
             recStatus={sections.recommendations}
             articleUrl={submittedUrl || undefined}
           />
-        </>
-      ) : null}
+        </div>
+      )}
     </div>
   )
 }

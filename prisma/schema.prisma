@@ -12,4 +12,5 @@ model EnhancementLog {
   articleUrl  String
   contentType String
   createdAt   DateTime @default(now())
+  email       String?
 }
