@@ -16,7 +16,9 @@ export function HomeTabsClient() {
 
   return (
     <main className="min-h-screen w-full px-4 py-6 sm:px-6 lg:px-8">
-      <header className="mb-8 text-center">
+      {/* screen-only: hidden inside @media print so the exported PDF contains
+          only the PrintableReport rendered by EnhancerClient. */}
+      <header className="screen-only mb-8 text-center">
         <h1 className="font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
           Article Enhancer Agent
         </h1>
@@ -56,7 +58,11 @@ export function HomeTabsClient() {
       <div className={view === 'generator' ? '' : 'hidden'}>
         <EnhancerClient />
       </div>
-      {view === 'history' && <HistoryClient />}
+      {view === 'history' && (
+        <div className="screen-only">
+          <HistoryClient />
+        </div>
+      )}
     </main>
   )
 }

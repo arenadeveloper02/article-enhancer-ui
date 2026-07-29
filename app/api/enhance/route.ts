@@ -36,12 +36,13 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const articleUrl = typeof body.article_url === 'string' ? body.article_url.trim() : ''
+  // Article text is OPTIONAL — when omitted the agent reads the article from the URL.
   const articleText = typeof body.article_text === 'string' ? body.article_text.trim() : ''
   const contentType = typeof body.content_type === 'string' ? body.content_type.trim() : ''
 
-  if (!articleUrl || !articleText || !contentType) {
+  if (!articleUrl || !contentType) {
     return Response.json(
-      { error: 'article_url, article_text, and content_type are all required.' },
+      { error: 'article_url and content_type are required.' },
       { status: 400 },
     )
   }

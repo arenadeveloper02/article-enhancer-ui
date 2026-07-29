@@ -28,13 +28,13 @@ import {
   normalizeCoverage,
   normalizeGapAnalysis,
   normalizeRecommendations,
-  splitArticleSegments,
 } from '@/lib/normalize'
 import { StatusChip } from '@/components/StatusChip'
 import { ErrorCard } from '@/components/ErrorCard'
 import { ProgressChecklist } from '@/components/ProgressChecklist'
 import type { ChecklistStage } from '@/components/ProgressChecklist'
 import { ResultTabs } from '@/components/ResultTabs'
+import { PrintableReport } from '@/components/PrintableReport'
 
 const CONTENT_TYPES = ['Blog Post', 'Landing Page', 'Guide', 'News', 'Product Page', 'Other'] as const
 
@@ -88,19 +88,18 @@ const RESERVED_KEYS = new Set([
 const inputBase =
   'w-full rounded-xl border bg-white px-4 py-2.5 text-sm text-ink shadow-sm transition placeholder:text-slate-400 focus:outline-none focus-visible:outline-2 focus-visible:outline-accent'
 
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null
 }
 
-function gapEntryText(entry: string | { title: string; detail?: string }): string {
-  if (typeof entry === 'string') return entry
-  return entry.detail ? `${entry.title} — ${entry.detail}` : entry.title
+function firstStringOf(rec: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = rec[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
 }
 
 /** Parses a string value that itself contains JSON; returns non-strings unchanged. */
@@ -214,68 +213,26 @@ function findMergedValue(merged: Record<string, unknown>, keys: string[]): unkno
   return undefined
 }
 
-function buildPrintableHtml(
-  content: string,
-  gap: GapAnalysisData | null,
-  rec: RecommendationsData | null,
-  cov: CoverageData | null,
-): string {
-  const sections: string[] = []
-  if (content.trim()) {
-    const articleHtml = splitArticleSegments(content)
-      .map((segment) =>
-        segment.added
-          ? `<span class="added">${escapeHtml(segment.text)}</span>`
-          : escapeHtml(segment.text),
-      )
-      .join('')
-    sections.push(
-      `<section><h2>Enhanced Article</h2><div class="article">${articleHtml}</div></section>`,
-    )
+/** Recursively merges non-reserved keys (and output/result/data envelopes) into `merged`. */
+function collectStructured(
+  obj: Record<string, unknown>,
+  merged: Record<string, unknown>,
+  depth: number,
+): void {
+  if (depth > 4) return
+  for (const [key, rawValue] of Object.entries(obj)) {
+    const lower = key.toLowerCase()
+    if (RESERVED_KEYS.has(lower)) continue
+    const value = parseIfJsonLike(rawValue)
+    if (lower === 'output' || lower === 'outputs' || lower === 'result' || lower === 'data') {
+      const rec = asRecord(value)
+      if (rec) {
+        collectStructured(rec, merged, depth + 1)
+        continue
+      }
+    }
+    merged[lower] = value
   }
-  if (cov) {
-    const rows = cov.criteria
-      .map(
-        (c) =>
-          `<li><strong>${escapeHtml(c.name)}</strong>${
-            c.passed === true ? ' — Pass' : c.passed === false ? ' — Fail' : ''
-          }${typeof c.score === 'number' ? ` (${Math.round(c.score)})` : ''}${
-            c.notes ? `<br/><em>${escapeHtml(c.notes)}</em>` : ''
-          }</li>`,
-      )
-      .join('')
-    sections.push(
-      `<section><h2>Coverage Verification</h2><p>Overall score: ${
-        cov.overall_score !== null ? Math.round(cov.overall_score) : 'n/a'
-      } / 100 · ${
-        cov.passed === true ? 'Pass' : cov.passed === false ? 'Fail' : 'Not determined'
-      }</p>${cov.summary ? `<p>${escapeHtml(cov.summary)}</p>` : ''}${rows ? `<ul>${rows}</ul>` : ''}</section>`,
-    )
-  }
-  if (gap) {
-    const group = (title: string, items: Array<string | { title: string; detail?: string }>): string =>
-      items.length > 0
-        ? `<h3>${title}</h3><ul>${items.map((i) => `<li>${escapeHtml(gapEntryText(i))}</li>`).join('')}</ul>`
-        : ''
-    const body =
-      group('Competitor Strengths', gap.competitor_strengths) +
-      group('Coverage Gaps', gap.coverage_gaps) +
-      group('Underdeveloped Sections', gap.underdeveloped_sections)
-    if (body) sections.push(`<section><h2>Gap Analysis</h2>${body}</section>`)
-  }
-  if (rec && rec.recommendations.length > 0) {
-    sections.push(
-      `<section><h2>Recommendations</h2><ol>${rec.recommendations
-        .map(
-          (r) =>
-            `<li><strong>${escapeHtml(r.title)}</strong>${
-              r.priority ? ` [${escapeHtml(r.priority)}]` : ''
-            }${r.detail ? `<br/>${escapeHtml(r.detail)}` : ''}</li>`,
-        )
-        .join('')}</ol></section>`,
-    )
-  }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Article Enhancer Output</title><style>body{font-family:Poppins,Georgia,serif;max-width:720px;margin:32px auto;padding:0 24px;color:#2C2D33;line-height:1.6}h1{font-size:24px}h2{font-size:19px;margin-top:28px;border-bottom:1px solid #E2E3E5;padding-bottom:6px}h3{font-size:15px;margin-top:18px}.article{white-space:pre-wrap}.added{background:#D1E3FA;color:#10458B;border-radius:3px;padding:0 2px;-webkit-box-decoration-break:clone;box-decoration-break:clone;-webkit-print-color-adjust:exact;print-color-adjust:exact}li{margin-bottom:6px}@media print{body{margin:0;max-width:none}}</style></head><body><h1>Article Enhancer Output</h1>${sections.join('')}</body></html>`
 }
 
 export function EnhancerClient() {
@@ -324,8 +281,15 @@ export function EnhancerClient() {
   // UI renders as soon as usable data appears — not only at [DONE].
   const finalOutputRef = useRef<Record<string, unknown> | null>(null)
   const looseTextRef = useRef('')
-  const streamErrorRef = useRef('')
   const lastPayloadRef = useRef<EnhancePayload | null>(null)
+
+  useEffect(() => {
+    if (phase !== 'streaming') return
+    const timer = window.setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [phase])
 
   useEffect(() => {
     return () => {
@@ -333,48 +297,16 @@ export function EnhancerClient() {
     }
   }, [])
 
-  useEffect(() => {
-    if (phase !== 'streaming') return
-    const id = window.setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
-    }, 1000)
-    return () => window.clearInterval(id)
-  }, [phase])
-
-  function validate(): boolean {
-    const next: EnhanceFormErrors = {}
-    const url = articleUrl.trim()
-    if (!url) {
-      next.articleUrl = 'Article URL is required.'
-    } else {
-      try {
-        const parsed = new URL(url)
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          next.articleUrl = 'Enter a valid http(s) URL.'
-        }
-      } catch {
-        next.articleUrl = 'Enter a valid URL, e.g. https://example.com/post'
-      }
-    }
-    if (!articleText.trim()) {
-      next.articleText = 'Article text is required.'
-    }
-    if (!contentType) {
-      next.contentType = 'Choose a content type.'
-    } else if (contentType === 'Other' && !otherType.trim()) {
-      next.otherType = 'Describe your content type.'
-    }
-    setErrors(next)
-    return Object.keys(next).length === 0
-  }
-
   function resetRun(): void {
-    abortRef.current?.abort()
-    doneRef.current = false
-    streamErrorRef.current = ''
-    looseTextRef.current = ''
-    rawTranscriptRef.current = ''
-    finalOutputRef.current = null
+    setContent('')
+    setStatusMessage('')
+    setElapsed(0)
+    setErrorMessage('')
+    setStages({ ...INITIAL_STAGES })
+    setSections({ ...INITIAL_SECTIONS })
+    setGapData(null)
+    setRecData(null)
+    setCoverage(null)
     targetAccumRef.current = { article: '', gapanalysis: '', recommendations: '', coverage: '' }
     blockAccumRef.current = {}
     blockTargetRef.current = {}
@@ -382,294 +314,244 @@ export function EnhancerClient() {
     recRef.current = null
     covRef.current = null
     dataPresentRef.current = { article: false, gapanalysis: false, recommendations: false, coverage: false }
-    setContent('')
-    setGapData(null)
-    setRecData(null)
-    setCoverage(null)
-    setStages({ ...INITIAL_STAGES, gapanalysis: 'active' })
-    setSections({ ...INITIAL_SECTIONS })
-    setErrorMessage('')
-    setStatusMessage('Contacting the enhancement service…')
-    setElapsed(0)
-    startRef.current = Date.now()
-    setPhase('streaming')
+    doneRef.current = false
+    rawTranscriptRef.current = ''
+    finalOutputRef.current = null
+    looseTextRef.current = ''
   }
 
-  function markSection(key: PanelKey, status: SectionStatus): void {
-    setSections((prev) => (prev[key] === status ? prev : { ...prev, [key]: status }))
+  function markStageActive(stage: StageId): void {
+    setStages((prev) => (prev[stage] === 'pending' ? { ...prev, [stage]: 'active' } : prev))
   }
 
-  function markStageActive(id: StageId): void {
-    setStages((prev) => {
-      if (prev[id] === 'done' || prev[id] === 'active') return prev
-      const next: Record<StageId, StageStatus> = { ...prev }
-      const idx = STAGE_ORDER.indexOf(id)
-      STAGE_ORDER.forEach((stage, i) => {
-        if (i < idx && next[stage] !== 'done') next[stage] = 'done'
-      })
-      next[id] = 'active'
-      return next
-    })
+  function markPanelStreaming(panel: PanelKey): void {
+    if (doneRef.current) return
+    setSections((prev) => (prev[panel] === 'streaming' ? prev : { ...prev, [panel]: 'streaming' }))
+    markStageActive(STAGE_FOR_PANEL[panel])
   }
 
-  function applyGapPayload(raw: unknown): void {
-    const data = normalizeGapAnalysis(raw)
-    if (isGapEmpty(data)) return
-    gapRef.current = data
-    setGapData(data)
-    dataPresentRef.current.gapanalysis = true
-    markSection('gapanalysis', 'streaming')
+  function panelText(panel: PanelKey): string {
+    let out = ''
+    for (const [blockId, text] of Object.entries(blockAccumRef.current)) {
+      if (blockTargetRef.current[blockId] === panel) out += text
+    }
+    return out
   }
 
-  function applyRecPayload(raw: unknown): void {
-    const data = normalizeRecommendations(raw)
-    if (data.recommendations.length === 0) return
-    recRef.current = data
-    setRecData(data)
-    dataPresentRef.current.recommendations = true
-    markSection('recommendations', 'streaming')
+  function applyPanel(panel: PanelKey): void {
+    const text = panelText(panel)
+    targetAccumRef.current[panel] = text
+    if (!text.trim()) return
+    markPanelStreaming(panel)
+    if (panel === 'article') {
+      const article = articleFromAccumulated(text)
+      if (article.trim() && !isHeartbeatMessage(article)) {
+        dataPresentRef.current.article = true
+        setContent(article)
+      }
+      return
+    }
+    if (panel === 'gapanalysis') {
+      const data = normalizeGapAnalysis(text)
+      if (!isGapEmpty(data)) {
+        gapRef.current = data
+        dataPresentRef.current.gapanalysis = true
+        setGapData(data)
+      }
+      return
+    }
+    if (panel === 'recommendations') {
+      const data = normalizeRecommendations(text)
+      if (data.recommendations.length > 0) {
+        recRef.current = data
+        dataPresentRef.current.recommendations = true
+        setRecData(data)
+      }
+      return
+    }
+    const data = normalizeCoverage(text)
+    if (!isCovEmpty(data)) {
+      covRef.current = data
+      dataPresentRef.current.coverage = true
+      setCoverage(data)
+    }
   }
 
-  function applyCoveragePayload(raw: unknown): void {
-    const data = normalizeCoverage(raw)
-    if (isCovEmpty(data)) return
-    covRef.current = data
-    setCoverage(data)
-    dataPresentRef.current.coverage = true
-    markSection('coverage', 'streaming')
-  }
-
-  function routeAccumulated(target: BlockTarget, accumulated: string): void {
+  function routeChunk(blockId: string, chunk: string): void {
+    blockAccumRef.current[blockId] = (blockAccumRef.current[blockId] ?? '') + chunk
+    let target: BlockTarget | undefined = blockTargetRef.current[blockId]
+    if (!target) {
+      const resolved = resolveBlockTarget(blockId)
+      if (resolved) target = resolved
+    }
+    if (!target) {
+      const classified = classifyUnknownPayload(blockAccumRef.current[blockId])
+      if (classified) target = classified
+    }
+    if (!target) return
+    blockTargetRef.current[blockId] = target
     if (target === 'status-theme' || target === 'status-research') {
       setStatusMessage(statusLabelFor(target))
       return
     }
-    if (target === 'article') {
-      const display = articleFromAccumulated(accumulated)
-      if (display.trim()) {
-        targetAccumRef.current.article = display
-        dataPresentRef.current.article = true
-        setContent(display)
-        markSection('article', 'streaming')
-        markStageActive('enhancedarticlewriter')
-      }
-      return
-    }
-    targetAccumRef.current[target] = accumulated
-    markSection(target, 'streaming')
-    markStageActive(STAGE_FOR_PANEL[target])
-    if (target === 'gapanalysis') {
-      applyGapPayload(accumulated)
-    } else if (target === 'recommendations') {
-      applyRecPayload(accumulated)
-    } else {
-      applyCoveragePayload(accumulated)
-    }
+    applyPanel(target)
+  }
+
+  function routeLooseText(text: string): void {
+    looseTextRef.current += text
+    const classified = classifyUnknownPayload(looseTextRef.current)
+    if (!classified) return
+    blockAccumRef.current['__loose__'] = looseTextRef.current
+    blockTargetRef.current['__loose__'] = classified
+    applyPanel(classified)
   }
 
   function applyMergedOutputs(): void {
     const merged = finalOutputRef.current
     if (!merged) return
-    const articleVal = findMergedValue(merged, [
-      'enhancedarticlewriter.content',
-      'enhancedarticlewriter',
-      'content',
-      'article',
-    ])
-    const articleTextValue = articleTextFrom(articleVal)
-    if (articleTextValue.trim() && articleTextValue.trim().length > targetAccumRef.current.article.trim().length) {
-      targetAccumRef.current.article = articleTextValue
-      dataPresentRef.current.article = true
-      setContent(articleTextValue)
-      markSection('article', 'streaming')
+    if (!dataPresentRef.current.article) {
+      const raw = findMergedValue(merged, [
+        'enhancedarticlewriter.content',
+        'content',
+        'article',
+        'enhanced_article',
+        'markdown',
+      ])
+      const article = articleTextFrom(parseIfJsonLike(raw))
+      if (article.trim() && !isHeartbeatMessage(article)) {
+        dataPresentRef.current.article = true
+        setContent(article)
+        markPanelStreaming('article')
+      }
     }
-    const gapStrengths = findMergedValue(merged, ['gapanalysis.competitor_strengths', 'competitor_strengths'])
-    const gapGaps = findMergedValue(merged, ['gapanalysis.coverage_gaps', 'coverage_gaps'])
-    const gapUnder = findMergedValue(merged, ['gapanalysis.underdeveloped_sections', 'underdeveloped_sections'])
-    if (gapStrengths !== undefined || gapGaps !== undefined || gapUnder !== undefined) {
-      applyGapPayload({
-        competitor_strengths: gapStrengths,
-        coverage_gaps: gapGaps,
-        underdeveloped_sections: gapUnder,
-      })
-    } else {
-      const gapWhole = findMergedValue(merged, ['gapanalysis'])
-      if (gapWhole !== undefined) applyGapPayload(gapWhole)
-    }
-    const recVal = findMergedValue(merged, ['recommendations.recommendations', 'recommendations'])
-    if (recVal !== undefined) applyRecPayload(recVal)
-    const covScore = findMergedValue(merged, ['coverageverifier.overall_score', 'overall_score'])
-    const covPassed = findMergedValue(merged, ['coverageverifier.passed', 'passed'])
-    const covSummary = findMergedValue(merged, ['coverageverifier.summary', 'summary'])
-    const covCriteria = findMergedValue(merged, ['coverageverifier.criteria', 'criteria'])
-    if (
-      covScore !== undefined ||
-      covPassed !== undefined ||
-      covSummary !== undefined ||
-      covCriteria !== undefined
-    ) {
-      applyCoveragePayload({
-        overall_score: covScore,
-        passed: covPassed,
-        summary: covSummary,
-        criteria: covCriteria,
-      })
-    } else {
-      const covWhole = findMergedValue(merged, ['coverageverifier'])
-      if (covWhole !== undefined) applyCoveragePayload(covWhole)
-    }
-  }
-
-  function mergeStructured(obj: Record<string, unknown>): void {
-    const merged: Record<string, unknown> = finalOutputRef.current ?? {}
-    let changed = false
-    const visit = (source: Record<string, unknown>, depth: number): void => {
-      if (depth > 4) return
-      for (const [key, value] of Object.entries(source)) {
-        const lower = key.toLowerCase()
-        if (RESERVED_KEYS.has(lower)) continue
-        if (lower === 'output' || lower === 'outputs' || lower === 'result' || lower === 'data') {
-          const inner = asRecord(parseIfJsonLike(value))
-          if (inner) visit(inner, depth + 1)
-          continue
+    {
+      const strengths = findMergedValue(merged, ['gapanalysis.competitor_strengths', 'competitor_strengths'])
+      const gaps = findMergedValue(merged, ['gapanalysis.coverage_gaps', 'coverage_gaps'])
+      const under = findMergedValue(merged, [
+        'gapanalysis.underdeveloped_sections',
+        'underdeveloped_sections',
+      ])
+      if (strengths !== undefined || gaps !== undefined || under !== undefined) {
+        const data = normalizeGapAnalysis({
+          competitor_strengths: strengths ?? [],
+          coverage_gaps: gaps ?? [],
+          underdeveloped_sections: under ?? [],
+        })
+        if (!isGapEmpty(data)) {
+          gapRef.current = data
+          dataPresentRef.current.gapanalysis = true
+          setGapData(data)
+          markPanelStreaming('gapanalysis')
         }
-        merged[lower] = parseIfJsonLike(value)
-        changed = true
       }
     }
-    visit(obj, 0)
-    if (changed) {
-      finalOutputRef.current = merged
-      applyMergedOutputs()
+    {
+      const recs = findMergedValue(merged, ['recommendations.recommendations', 'recommendations'])
+      if (recs !== undefined) {
+        const data = normalizeRecommendations(recs)
+        if (data.recommendations.length > 0) {
+          recRef.current = data
+          dataPresentRef.current.recommendations = true
+          setRecData(data)
+          markPanelStreaming('recommendations')
+        }
+      }
+    }
+    {
+      const score = findMergedValue(merged, ['coverageverifier.overall_score', 'overall_score'])
+      const passed = findMergedValue(merged, ['coverageverifier.passed', 'passed'])
+      const summary = findMergedValue(merged, ['coverageverifier.summary', 'summary'])
+      const criteria = findMergedValue(merged, ['coverageverifier.criteria', 'criteria'])
+      if (score !== undefined || passed !== undefined || summary !== undefined || criteria !== undefined) {
+        const data = normalizeCoverage({ overall_score: score, passed, summary, criteria })
+        if (!isCovEmpty(data)) {
+          covRef.current = data
+          dataPresentRef.current.coverage = true
+          setCoverage(data)
+          markPanelStreaming('coverage')
+        }
+      }
     }
   }
 
-  function handleEventObject(obj: Record<string, unknown>): void {
-    const eventType =
-      typeof obj.event === 'string' ? obj.event : typeof obj.type === 'string' ? obj.type : ''
-    if (eventType.toLowerCase() === 'error' || obj.success === false) {
-      const msg =
-        typeof obj.error === 'string'
-          ? obj.error
-          : typeof obj.message === 'string'
-            ? obj.message
-            : ''
-      if (msg) streamErrorRef.current = msg
-    }
-    if (typeof obj.message === 'string' && isHeartbeatMessage(obj.message)) {
-      setStatusMessage(obj.message.trim())
-    }
-    const blockId =
-      typeof obj.blockId === 'string'
-        ? obj.blockId
-        : typeof obj.block_id === 'string'
-          ? obj.block_id
-          : typeof obj.blockName === 'string'
-            ? obj.blockName
-            : ''
-    const chunkText =
-      typeof obj.chunk === 'string'
-        ? obj.chunk
-        : typeof obj.delta === 'string'
-          ? obj.delta
-          : typeof obj.text === 'string'
-            ? obj.text
-            : ''
-    if (blockId && chunkText) {
-      const key = blockId.trim().toLowerCase()
-      blockAccumRef.current[key] = (blockAccumRef.current[key] ?? '') + chunkText
-      let target: BlockTarget | null = blockTargetRef.current[key] ?? resolveBlockTarget(blockId)
-      if (!target) {
-        target = classifyUnknownPayload(blockAccumRef.current[key])
-      }
-      if (target) {
-        blockTargetRef.current[key] = target
-        routeAccumulated(target, blockAccumRef.current[key])
-      }
-      return
-    }
-    if (chunkText) {
-      if (isHeartbeatMessage(chunkText)) {
-        setStatusMessage(chunkText.trim())
-        return
-      }
-      looseTextRef.current += chunkText
-      const classified = classifyUnknownPayload(looseTextRef.current)
-      if (classified) routeAccumulated(classified, looseTextRef.current)
-      return
-    }
-    mergeStructured(obj)
+  function mergeStructured(payload: Record<string, unknown>): void {
+    const merged = finalOutputRef.current ?? {}
+    collectStructured(payload, merged, 0)
+    finalOutputRef.current = merged
+    if (Object.keys(merged).length > 0) applyMergedOutputs()
   }
 
-  function processLine(rawLine: string): void {
-    const line = rawLine.trim()
-    if (!line) return
-    const data = line.startsWith('data:') ? line.slice(5).trim() : line
-    if (!data) return
-    if (data === '[DONE]') {
-      finalize()
-      return
+  function salvageFromTranscript(): void {
+    const transcript = rawTranscriptRef.current
+    if (!transcript.trim()) return
+    if (!dataPresentRef.current.article) {
+      const fromPanel = articleFromAccumulated(targetAccumRef.current.article)
+      const fromTranscript = articleTextFrom(extractKeyValue(transcript, 'content'))
+      const article = fromPanel.trim() ? fromPanel : fromTranscript
+      if (article.trim() && !isHeartbeatMessage(article)) {
+        dataPresentRef.current.article = true
+        setContent(article)
+      }
     }
-    rawTranscriptRef.current += `\n${data}`
-    const parsed = extractBalancedJson(data)
-    const rec = asRecord(parsed)
-    if (rec) {
-      handleEventObject(rec)
-      return
+    if (!dataPresentRef.current.gapanalysis) {
+      const strengths = extractKeyValue(transcript, 'competitor_strengths')
+      const gaps = extractKeyValue(transcript, 'coverage_gaps')
+      const under = extractKeyValue(transcript, 'underdeveloped_sections')
+      let data: GapAnalysisData | null = null
+      if (strengths !== undefined || gaps !== undefined || under !== undefined) {
+        data = normalizeGapAnalysis({
+          competitor_strengths: strengths ?? [],
+          coverage_gaps: gaps ?? [],
+          underdeveloped_sections: under ?? [],
+        })
+      } else if (targetAccumRef.current.gapanalysis.trim()) {
+        data = normalizeGapAnalysis(targetAccumRef.current.gapanalysis)
+      }
+      if (data && !isGapEmpty(data)) {
+        gapRef.current = data
+        dataPresentRef.current.gapanalysis = true
+        setGapData(data)
+      }
     }
-    if (!isHeartbeatMessage(data)) {
-      looseTextRef.current += `\n${data}`
-      const classified = classifyUnknownPayload(looseTextRef.current)
-      if (classified) routeAccumulated(classified, looseTextRef.current)
-    } else {
-      setStatusMessage(data)
+    if (!dataPresentRef.current.recommendations) {
+      const recs = extractKeyValue(transcript, 'recommendations')
+      let data: RecommendationsData | null = null
+      if (recs !== undefined) {
+        data = normalizeRecommendations(recs)
+      } else if (targetAccumRef.current.recommendations.trim()) {
+        data = normalizeRecommendations(targetAccumRef.current.recommendations)
+      }
+      if (data && data.recommendations.length > 0) {
+        recRef.current = data
+        dataPresentRef.current.recommendations = true
+        setRecData(data)
+      }
+    }
+    if (!dataPresentRef.current.coverage) {
+      const score = extractKeyValue(transcript, 'overall_score')
+      const passed = extractKeyValue(transcript, 'passed')
+      const summary = extractKeyValue(transcript, 'summary')
+      const criteria = extractKeyValue(transcript, 'criteria')
+      let data: CoverageData | null = null
+      if (score !== undefined || passed !== undefined || summary !== undefined || criteria !== undefined) {
+        data = normalizeCoverage({ overall_score: score, passed, summary, criteria })
+      } else if (targetAccumRef.current.coverage.trim()) {
+        data = normalizeCoverage(targetAccumRef.current.coverage)
+      }
+      if (data && !isCovEmpty(data)) {
+        covRef.current = data
+        dataPresentRef.current.coverage = true
+        setCoverage(data)
+      }
     }
   }
 
-  function finalize(): void {
+  function finalizeRun(): void {
     if (doneRef.current) return
     doneRef.current = true
-    const transcript = rawTranscriptRef.current
-    if (transcript) {
-      if (!dataPresentRef.current.article) {
-        const value = extractKeyValue(transcript, 'content')
-        if (typeof value === 'string' && value.trim()) {
-          targetAccumRef.current.article = value
-          dataPresentRef.current.article = true
-          setContent(value)
-        }
-      }
-      if (!dataPresentRef.current.gapanalysis) {
-        applyGapPayload({
-          competitor_strengths: extractKeyValue(transcript, 'competitor_strengths'),
-          coverage_gaps: extractKeyValue(transcript, 'coverage_gaps'),
-          underdeveloped_sections: extractKeyValue(transcript, 'underdeveloped_sections'),
-        })
-      }
-      if (!dataPresentRef.current.recommendations) {
-        const value = extractKeyValue(transcript, 'recommendations')
-        if (value !== undefined) applyRecPayload(value)
-      }
-      if (!dataPresentRef.current.coverage) {
-        applyCoveragePayload({
-          overall_score: extractKeyValue(transcript, 'overall_score'),
-          passed: extractKeyValue(transcript, 'passed'),
-          summary: extractKeyValue(transcript, 'summary'),
-          criteria: extractKeyValue(transcript, 'criteria'),
-        })
-      }
-    }
+    salvageFromTranscript()
+    applyMergedOutputs()
     const present = dataPresentRef.current
-    const anyData = present.article || present.gapanalysis || present.recommendations || present.coverage
-    if (!anyData) {
-      setErrorMessage(
-        streamErrorRef.current ||
-          'The enhancement service finished without returning any output. Please try again.',
-      )
-      setStatusMessage('')
-      setPhase('error')
-      return
-    }
     setSections({
       article: present.article ? 'done' : 'empty',
       gapanalysis: present.gapanalysis ? 'done' : 'empty',
@@ -683,14 +565,90 @@ export function EnhancerClient() {
       coverageverifier: 'done',
     })
     setStatusMessage('')
-    setPhase('done')
+    const anyData = present.article || present.gapanalysis || present.recommendations || present.coverage
+    if (anyData) {
+      setPhase('done')
+    } else {
+      setErrorMessage(
+        (prev) => prev || 'The enhancement service finished without returning any content. Please try again.',
+      )
+      setPhase('error')
+    }
+  }
+
+  function processStreamPayload(dataText: string): void {
+    rawTranscriptRef.current += `${dataText}\n`
+    if (dataText === '[DONE]' || dataText === 'DONE') {
+      finalizeRun()
+      return
+    }
+    let parsed: unknown = null
+    if (dataText.startsWith('{') || dataText.startsWith('[')) {
+      parsed = extractBalancedJson(dataText)
+    }
+    const rec = asRecord(parsed)
+    if (!rec) {
+      if (isHeartbeatMessage(dataText)) {
+        setStatusMessage(dataText.trim())
+        return
+      }
+      routeLooseText(dataText)
+      return
+    }
+    const lowerRec: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(rec)) lowerRec[key.toLowerCase()] = value
+
+    const statusText = firstStringOf(lowerRec, ['message', 'status'])
+    if (statusText && isHeartbeatMessage(statusText)) setStatusMessage(statusText)
+
+    const eventName = firstStringOf(lowerRec, ['event', 'type']).toLowerCase()
+    if (eventName === 'done' || lowerRec.done === true) {
+      mergeStructured(rec)
+      finalizeRun()
+      return
+    }
+
+    const blockId = firstStringOf(lowerRec, ['blockid', 'block_id', 'blockname'])
+    let chunk = ''
+    for (const key of ['chunk', 'delta', 'text']) {
+      const value = lowerRec[key]
+      if (typeof value === 'string' && value) {
+        chunk = value
+        break
+      }
+    }
+
+    if (blockId && chunk) {
+      routeChunk(blockId, chunk)
+    } else if (chunk && !isHeartbeatMessage(chunk)) {
+      routeLooseText(chunk)
+    }
+
+    mergeStructured(rec)
+  }
+
+  function handleStreamLine(line: string): void {
+    const trimmed = line.trim()
+    if (!trimmed) return
+    if (trimmed.startsWith(':')) return
+    if (trimmed.startsWith('event:') || trimmed.startsWith('id:') || trimmed.startsWith('retry:')) return
+    const dataText = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed
+    if (!dataText) return
+    processStreamPayload(dataText)
   }
 
   async function runEnhancement(payload: EnhancePayload): Promise<void> {
-    resetRun()
-    setSubmittedUrl(payload.article_url)
+    abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
+    lastPayloadRef.current = payload
+    resetRun()
+    setSubmittedUrl(payload.article_url)
+    setPhase('streaming')
+    setStatusMessage('Starting enhancement…')
+    startRef.current = Date.now()
+    setElapsed(0)
+
     try {
       const res = await fetch('/api/enhance', {
         method: 'POST',
@@ -700,15 +658,16 @@ export function EnhancerClient() {
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error || `The enhancement service returned an error (${res.status}).`)
+        throw new Error(body?.error || `The enhancement request failed (${res.status}).`)
       }
-      const resContentType = res.headers.get('content-type') ?? ''
-      if (resContentType.includes('application/json')) {
-        const data: unknown = await res.json()
-        rawTranscriptRef.current += JSON.stringify(data)
-        const rec = asRecord(data)
-        if (rec) mergeStructured(rec)
-        finalize()
+      const contentTypeHeader = res.headers.get('content-type') ?? ''
+      if (contentTypeHeader.includes('application/json')) {
+        const text = await res.text()
+        rawTranscriptRef.current += `${text}\n`
+        const parsedBody = extractBalancedJson(text)
+        const recBody = asRecord(parsedBody)
+        if (recBody) mergeStructured(recBody)
+        finalizeRun()
         return
       }
       if (!res.body) {
@@ -723,54 +682,83 @@ export function EnhancerClient() {
         buffer += decoder.decode(value, { stream: true })
         let newlineIndex = buffer.indexOf('\n')
         while (newlineIndex !== -1) {
-          const line = buffer.slice(0, newlineIndex)
+          const line = buffer.slice(0, newlineIndex).replace(/\r$/, '')
           buffer = buffer.slice(newlineIndex + 1)
-          processLine(line)
-          if (doneRef.current) break
+          handleStreamLine(line)
           newlineIndex = buffer.indexOf('\n')
         }
-        if (doneRef.current) break
       }
-      if (!doneRef.current && buffer.trim()) processLine(buffer)
-      finalize()
+      buffer += decoder.decode()
+      if (buffer.trim()) handleStreamLine(buffer)
+      if (!doneRef.current) finalizeRun()
     } catch (err) {
-      if (controller.signal.aborted) return
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        if (!doneRef.current) finalizeRun()
+        return
+      }
       setErrorMessage(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setStatusMessage('')
       setPhase('error')
     }
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
-    if (phase === 'streaming') return
-    if (!validate()) return
+    const nextErrors: EnhanceFormErrors = {}
+    const url = articleUrl.trim()
+    if (!url) {
+      nextErrors.articleUrl = 'Article URL is required.'
+    } else {
+      try {
+        const parsedUrl = new URL(url)
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+          nextErrors.articleUrl = 'Enter a valid http(s) URL.'
+        }
+      } catch {
+        nextErrors.articleUrl = 'Enter a valid URL (including https://).'
+      }
+    }
+    // Article text is OPTIONAL — when left empty the agent reads the article
+    // straight from the URL.
+    if (!contentType) {
+      nextErrors.contentType = 'Select a content type.'
+    }
+    if (contentType === 'Other' && !otherType.trim()) {
+      nextErrors.otherType = 'Describe the content type.'
+    }
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
     const payload: EnhancePayload = {
-      article_url: articleUrl.trim(),
+      article_url: url,
       article_text: articleText.trim(),
       content_type: contentType === 'Other' ? otherType.trim() : contentType,
     }
-    lastPayloadRef.current = payload
-    void runEnhancement(payload)
+    await runEnhancement(payload)
+  }
+
+  function handleCancel(): void {
+    abortRef.current?.abort()
   }
 
   function handleRetry(): void {
-    const payload = lastPayloadRef.current
-    if (payload) {
-      void runEnhancement(payload)
-    } else {
-      setErrorMessage('')
-      setPhase('idle')
-    }
+    const last = lastPayloadRef.current
+    if (last) void runEnhancement(last)
   }
 
-  function handleExport(): void {
-    const html = buildPrintableHtml(content, gapData, recData, coverage)
-    const win = window.open('', '_blank')
-    if (!win) return
-    win.document.write(html)
-    win.document.close()
-    win.focus()
+  /**
+   * Export/Print: prints THIS page. The print-only PrintableReport below
+   * reuses the exact same components as the on-screen UI, and app/globals.css
+   * carries the @media print stylesheet (A4, fixed margins, page-break rules,
+   * no UI chrome). We wait for every font to be ready so nothing prints
+   * half-rendered with fallback system fonts.
+   */
+  async function handleExport(): Promise<void> {
+    try {
+      await document.fonts.ready
+    } catch {
+      // Font loading state unavailable — print anyway.
+    }
+    window.print()
   }
 
   const checklistStages: ChecklistStage[] = STAGE_ORDER.map((id) => ({
@@ -779,79 +767,84 @@ export function EnhancerClient() {
     status: stages[id],
   }))
 
+  const hasResults =
+    content.trim().length > 0 || gapData !== null || recData !== null || coverage !== null
+
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <section
-        aria-label="Article input"
-        className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
-      >
-        <form onSubmit={handleSubmit} noValidate className="space-y-5">
-          <div>
-            <label
-              htmlFor="article-url"
-              className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
-            >
-              Article URL
-            </label>
-            <input
-              id="article-url"
-              type="url"
-              value={articleUrl}
-              onChange={(event) => setArticleUrl(event.target.value)}
-              placeholder="https://example.com/blog/my-post"
-              aria-invalid={Boolean(errors.articleUrl)}
-              className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
-            />
-            {errors.articleUrl ? (
-              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleUrl}</p>
-            ) : null}
-          </div>
-          <div>
-            <label
-              htmlFor="article-text"
-              className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
-            >
-              Article text
-            </label>
-            <textarea
-              id="article-text"
-              rows={10}
-              value={articleText}
-              onChange={(event) => setArticleText(event.target.value)}
-              placeholder="Paste the full article text here…"
-              aria-invalid={Boolean(errors.articleText)}
-              className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
-            />
-            {errors.articleText ? (
-              <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleText}</p>
-            ) : null}
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
+    <>
+      <div className="screen-only mx-auto max-w-5xl">
+        <form
+          onSubmit={(event) => void handleSubmit(event)}
+          noValidate
+          className="card-enter mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6"
+        >
+          <div className="space-y-4">
             <div>
               <label
-                htmlFor="content-type"
+                htmlFor="article-url"
                 className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
               >
-                Content type
+                Article URL
               </label>
-              <select
-                id="content-type"
-                value={contentType}
-                onChange={(event) => setContentType(event.target.value)}
-                aria-invalid={Boolean(errors.contentType)}
-                className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'}`}
-              >
-                <option value="">Select a content type…</option>
-                {CONTENT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-              {errors.contentType ? (
-                <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.contentType}</p>
-              ) : null}
+              <input
+                id="article-url"
+                type="url"
+                value={articleUrl}
+                onChange={(event) => setArticleUrl(event.target.value)}
+                placeholder="https://example.com/blog/my-article"
+                disabled={phase === 'streaming'}
+                className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
+              />
+              {errors.articleUrl && (
+                <p className="mt-1 text-xs font-medium text-rose-600">{errors.articleUrl}</p>
+              )}
             </div>
+            <div>
+              <label
+                htmlFor="article-text"
+                className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft"
+              >
+                Article text <span className="font-normal normal-case text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                id="article-text"
+                rows={7}
+                value={articleText}
+                onChange={(event) => setArticleText(event.target.value)}
+                placeholder="Paste the full article text here — or leave it empty and the agent will read the article from the URL."
+                disabled={phase === 'streaming'}
+                className={`${inputBase} resize-y ${errors.articleText ? 'border-rose-300' : 'border-slate-200'}`}
+              />
+              {errors.articleText && (
+                <p className="mt-1 text-xs font-medium text-rose-600">{errors.articleText}</p>
+              )}
+            </div>
+            <fieldset>
+              <legend className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft">
+                Content type
+              </legend>
+              <div className="flex flex-wrap gap-2">
+                {CONTENT_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setContentType(type)}
+                    disabled={phase === 'streaming'}
+                    aria-pressed={contentType === type}
+                    className={`rounded-full border px-4 py-2 text-xs font-semibold transition focus:outline-none focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+                      contentType === type
+                        ? 'border-accent bg-indigo-50 text-accent-deep'
+                        : 'border-slate-200 bg-white text-ink-soft hover:border-indigo-200 hover:text-ink'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+              {errors.contentType && (
+                <p className="mt-1 text-xs font-medium text-rose-600">{errors.contentType}</p>
+              )}
+            </fieldset>
             {contentType === 'Other' && (
               <div>
                 <label
@@ -865,61 +858,85 @@ export function EnhancerClient() {
                   type="text"
                   value={otherType}
                   onChange={(event) => setOtherType(event.target.value)}
-                  placeholder="e.g. Case Study"
-                  aria-invalid={Boolean(errors.otherType)}
+                  placeholder="e.g. Comparison page, FAQ, Whitepaper"
+                  disabled={phase === 'streaming'}
                   className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
                 />
-                {errors.otherType ? (
-                  <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.otherType}</p>
-                ) : null}
+                {errors.otherType && (
+                  <p className="mt-1 text-xs font-medium text-rose-600">{errors.otherType}</p>
+                )}
               </div>
             )}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={phase === 'streaming'}
-              className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {phase === 'streaming' ? 'Enhancing…' : 'Get Recommendations'}
-            </button>
-            {phase === 'streaming' && (
-              <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
-            )}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="submit"
+                disabled={phase === 'streaming'}
+                className="inline-flex items-center rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {phase === 'streaming' ? 'Enhancing…' : 'Enhance Article'}
+              </button>
+              {phase === 'streaming' && (
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-soft transition hover:border-rose-200 hover:text-rose-600 focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  Cancel
+                </button>
+              )}
+              {hasResults && phase !== 'streaming' && (
+                <button
+                  type="button"
+                  onClick={() => void handleExport()}
+                  className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-accent-deep transition hover:bg-indigo-100 focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <span aria-hidden="true">⎙</span> Export / Print
+                </button>
+              )}
+            </div>
           </div>
         </form>
-      </section>
 
-      {phase === 'streaming' && <ProgressChecklist stages={checklistStages} />}
+        {phase !== 'idle' && (
+          <div className="mt-6 space-y-4">
+            {phase === 'streaming' && statusMessage && (
+              <div className="flex justify-center">
+                <StatusChip message={statusMessage} elapsedSeconds={elapsed} />
+              </div>
+            )}
+            <ProgressChecklist stages={checklistStages} />
+            {phase === 'error' && errorMessage ? (
+              <ErrorCard message={errorMessage} onRetry={handleRetry} />
+            ) : (
+              <ResultTabs
+                content={content}
+                articleStatus={sections.article}
+                coverageData={coverage}
+                coverageStatus={sections.coverage}
+                gapData={gapData}
+                gapStatus={sections.gapanalysis}
+                recData={recData}
+                recStatus={sections.recommendations}
+                articleUrl={submittedUrl || undefined}
+              />
+            )}
+          </div>
+        )}
+      </div>
 
-      {phase === 'error' && <ErrorCard message={errorMessage} onRetry={handleRetry} />}
-
-      {(phase === 'streaming' || phase === 'done') && (
-        <div className="flex flex-col gap-4">
-          {phase === 'done' && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleExport}
-                className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
-              >
-                Export / Print
-              </button>
-            </div>
-          )}
-          <ResultTabs
-            content={content}
-            articleStatus={sections.article}
-            coverageData={coverage}
-            coverageStatus={sections.coverage}
-            gapData={gapData}
-            gapStatus={sections.gapanalysis}
-            recData={recData}
-            recStatus={sections.recommendations}
-            articleUrl={submittedUrl || undefined}
-          />
-        </div>
-      )}
-    </div>
+      {/* Print-only mirror — reuses the exact same UI components, shown only
+          inside @media print (see app/globals.css). */}
+      <PrintableReport
+        content={content}
+        articleStatus={sections.article}
+        coverageData={coverage}
+        coverageStatus={sections.coverage}
+        gapData={gapData}
+        gapStatus={sections.gapanalysis}
+        recData={recData}
+        recStatus={sections.recommendations}
+        articleUrl={submittedUrl || undefined}
+      />
+    </>
   )
 }

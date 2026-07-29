@@ -83,3 +83,117 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Export / Print ──────────────────────────────────────────────────────
+   The Export/Print feature prints THIS page via window.print(). The
+   .print-report container (components/PrintableReport.tsx) reuses the exact
+   same React components that render the on-screen UI — no separate PDF
+   template. Poppins is self-hosted through next/font, so the same @font-face
+   files that style the UI are embedded in the printed page automatically
+   (no fallback to system fonts). handleExport awaits document.fonts.ready
+   before printing so nothing renders half-loaded. */
+
+.print-report {
+  display: none;
+}
+
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+
+@media print {
+  /* Hide the interactive app; show only the print mirror. */
+  .screen-only {
+    display: none !important;
+  }
+  .print-report {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    min-height: auto;
+  }
+
+  /* Freeze animations/transitions so nothing prints half-rendered. */
+  .print-report *,
+  .print-report *::before,
+  .print-report *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Cards, list items, table rows, quotes and code blocks never split
+     across pages. */
+  .print-report .print-card,
+  .print-report li,
+  .print-report tr,
+  .print-report blockquote,
+  .print-report pre {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Keep headings attached to the content that follows them. */
+  .print-report h1,
+  .print-report h2,
+  .print-report h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Repeat table headers on every page for long tables (markdown GFM tables
+     and criteria lists that span multiple pages). */
+  .print-report thead {
+    display: table-header-group;
+  }
+  .print-report tfoot {
+    display: table-footer-group;
+  }
+  .print-report table {
+    width: 100% !important;
+    table-layout: fixed;
+    border-collapse: collapse;
+  }
+
+  /* UI-only chrome (copy buttons, justification toggles) never reaches the
+     PDF. */
+  .print-report button {
+    display: none !important;
+  }
+
+  /* Expand every scroll container so long criteria lists and articles
+     paginate instead of clipping behind a scrollbar. */
+  .print-report .overflow-y-auto,
+  .print-report .overflow-x-auto,
+  .print-report [class*='max-h-'] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Fixed print width — no viewport-relative measuring in the PDF engine. */
+  .print-report .max-w-\[68ch\] {
+    max-width: none !important;
+  }
+  .print-report .sticky {
+    position: static !important;
+  }
+
+  /* Drop box shadows — print engines render them as grey smears. */
+  .print-report * {
+    box-shadow: none !important;
+  }
+
+  /* Preserve highlight marks, score rings and status chips exactly as on
+     screen. */
+  .print-report mark,
+  .print-report [class*='bg-'],
+  .print-report [class*='border-'] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

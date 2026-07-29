@@ -1,21 +1,23 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-29T13:44:54.909Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-29T14:05:00.307Z.
 
 ## Overview
 
-Article Enhancer Agent UI with streaming enhancement results and a History view backed by the Arena build-history workflow.
+Article Enhancer Agent — article text is now optional, and the Export/Print feature reuses the exact same UI components via a dedicated @media print stylesheet so the PDF matches the on-screen rendering.
 
 **Repository:** `article-enhancer-ui`  
-**File count:** 43
+**File count:** 44
 
 ## Features
 
-- Streaming article enhancement with live progress checklist
-- Gap analysis, recommendations, and coverage verification tabs
-- History view of previous runs fetched per Arena email
-- Read-only viewing of past generated outputs
-- Export / print of the full enhancement output
+- Optional article text — URL + content type are enough; the agent fetches content from the URL
+- Export/Print now prints the SAME React components (ResultCard, CoverageCard, GapAnalysisCard, RecommendationsCard) that render the UI — no separate HTML template
+- Dedicated @media print stylesheet: A4 page size with fixed margins, page-break-inside: avoid on cards/rows/list items, repeated table headers (thead as table-header-group), expanded scroll containers, no viewport-relative widths
+- UI-only chrome (copy buttons, toggles, sticky tab bar, scrollbars, shadows, animations) removed from print output
+- Poppins embedded automatically in print via next/font self-hosted @font-face; print waits for document.fonts.ready before window.print()
+- print-color-adjust: exact preserves highlight marks and status colors in the PDF
+- Known residual print-vs-UI differences to review: collapsed criteria justifications stay collapsed (matches UI state), box-shadows are intentionally dropped, and the animated streaming gradient/cursor are frozen
 
 ## Tech Stack
 
@@ -65,6 +67,7 @@ Article Enhancer Agent UI with streaming enhancement results and a History view 
 - `components/HomeTabsClient.tsx`
 - `components/InsightTabs.tsx`
 - `components/MarkdownRenderer.tsx`
+- `components/PrintableReport.tsx`
 - `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
@@ -123,6 +126,7 @@ Article Enhancer Agent UI with streaming enhancement results and a History view 
 - `components/HomeTabsClient.tsx`
 - `components/InsightTabs.tsx`
 - `components/MarkdownRenderer.tsx`
+- `components/PrintableReport.tsx`
 - `components/ProgressChecklist.tsx`
 - `components/RecommendationsCard.tsx`
 - `components/ResultCard.tsx`
@@ -149,36 +153,21 @@ Article Enhancer Agent UI with streaming enhancement results and a History view 
 
 ## Latest Change
 
-- **Updated at:** 2026-07-29T13:44:54.909Z
-- **Request:** Add a "History" section to this Article Recommendation Agent tool. Requirements:
+- **Updated at:** 2026-07-29T14:05:00.307Z
+- **Request:** **Note: Don't change the UI**
 
-1. Location & trigger: Add a "History" button/tab in the header area (next to or near the title) that toggles between the main "Generator" view and a "History" view.
-2. What gets saved: Every time the user clicks "Get Recommendations" and a result is generated, save a history entry containing:
-- Target Keyword
-- Client / Brand
-- Timestamp (date + time of generation)
-- The full generated output (the H1, headings, and article recommendations)
-3. History view UI:
-Show entries as a reverse-chronological list (newest first), each as a card showing: keyword, client, timestamp, and a short preview of the H1/title generated.
-Each card should have:
-- A "View" button/click action that loads that entry's full output back into the main results view (read-only, non-editable)
-If there's no history yet, show an empty state message like "No previous runs yet — generate your first recommendation to see it here."
-4. Persistence: Store history using in-memory React state (use useState/array), since browser storage isn't available in this environment. Note in a comment that this resets on page reload, and if the user wants persistence across sessions, they'd need to connect a backend/database.
-5. Styling: Match the existing design — same rounded cards, purple/indigo accent color, clean spacing, and typography already used in the tool.
+1)Make the article text non-mandatory 
+2)My app renders Article enhancer results in a web UI, and I have a "Export/Print" feature that currently uses a separate/inconsistent rendering path, causing the PDF to look broken compared to the UI (bad spacing, missing fonts, broken tables/cards, no consistent theme).
 
-Keep the existing Generator view and functionality fully intact — just add History as an additional view/tab.
+I want the PDF output to visually match the UI as closely as possible. Please:
 
-History : 
-
-curl -X POST \
-  -H "X-API-Key: use the same key " \
-  -H "Content-Type: application/json" \
-  -d '{"email":"example","type":"article_enhancer","stream":false,"selectedOutputs":["buildhistory.result"]}' \
-  https://agent.thearena.ai/api/workflows/38458816-0871-4c2f-8545-39654a5530cc/execute
-
-
-and in the 
-API 
- https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute
-
-Add email in the payload
+Reuse the exact same HTML/CSS component that renders the UI for PDF generation, instead of building a separate PDF template — the goal is "print this view," not "generate new markup."
+Add a dedicated @media print stylesheet that:
+Fixes container widths (no vw/100% widths that assume a browser viewport) so tables and cards don't overflow or get clipped.
+Sets explicit page-break-inside: avoid on cards, table rows, and any block that shouldn't split across pages.
+Converts any flex/grid layouts that don't render well in the PDF engine into simpler block/table layouts if needed.
+Removes UI-only elements (buttons, hover states, tooltips, scrollbars) that shouldn't appear in the PDF.
+Explicitly loads/embeds the same fonts and icon sets used in the UI (as base64 or @font-face with a bundled file), since PDFs often fall back to default system fonts if fonts aren't embedded.
+If using a headless-browser-based renderer (e.g., Puppeteer/Playwright), wait for all fonts, images, and dynamic content to fully load (waitUntil: 'networkidle0' or an explicit "ready" signal) before generating the PDF, so nothing is half-rendered.
+Set a fixed page size (A4/Letter) and margins, and test long keyword lists/tables specifically for pagination — check that headers repeat on each page if the table spans multiple pages.
+After generating, compare the PDF against the UI screenshot for the same data and list any visual differences (spacing, colors, fonts, alignment) so I can review before finalizing.
