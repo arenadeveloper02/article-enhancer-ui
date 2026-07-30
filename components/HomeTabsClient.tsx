@@ -55,8 +55,9 @@ export function HomeTabsClient() {
       {/* The Generator stays mounted (hidden) while History is open so an
           in-flight streaming run and its results are never lost when the
           user toggles tabs. The hidden wrapper also keeps the Generator's
-          print mirror out of History exports. */}
-      <div className={view === 'generator' ? '' : 'hidden'}>
+          print mirror out of History exports. The `enhancer-wide` class
+          widens the Generator form/results column via app/globals.css. */}
+      <div className={view === 'generator' ? 'enhancer-wide' : 'enhancer-wide hidden'}>
         <EnhancerClient />
       </div>
       {/* HistoryClient manages its own screen-only wrappers internally so its

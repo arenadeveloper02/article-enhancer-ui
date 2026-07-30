@@ -112,8 +112,12 @@ export function ResultTabs({
 
   const coveragePassed = coverageData ? coverageData.passed : null
 
+  // Header action buttons visually match the tab bar (rounded-2xl card chrome)
+  // and stretch to the same height, so Back / Export never look misaligned
+  // next to the tabs. On narrow viewports the actions wrap onto their own row
+  // below the (horizontally scrollable) tab bar instead of squashing it.
   const headerButtonClasses =
-    'flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent'
+    'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-ink-soft shadow-card transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent'
 
   const tabList = (
     <div
@@ -164,54 +168,58 @@ export function ResultTabs({
 
   return (
     <section aria-label="Enhancement results" className="screen-only card-enter">
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-stretch">
         <div className="min-w-0 flex-1 overflow-x-auto">{tabList}</div>
-        {onExport && (
-          <button
-            type="button"
-            onClick={onExport}
-            aria-label="Export as PDF / print"
-            className={headerButtonClasses}
-          >
-            <svg
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-              className="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M8 2v8" />
-              <path d="M4.5 6.5L8 10l3.5-3.5" />
-              <path d="M3 13.5h10" />
-            </svg>
-            <span className="hidden sm:inline">Export</span>
-          </button>
-        )}
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to history"
-            className={headerButtonClasses}
-          >
-            <svg
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-              className="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M10 3L5 8l5 5" />
-            </svg>
-            Back
-          </button>
-        )}
+        {(onExport || onBack) ? (
+          <div className="flex shrink-0 items-stretch justify-end gap-2">
+            {onExport && (
+              <button
+                type="button"
+                onClick={onExport}
+                aria-label="Export as PDF / print"
+                className={headerButtonClasses}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M8 2v8" />
+                  <path d="M4.5 6.5L8 10l3.5-3.5" />
+                  <path d="M3 13.5h10" />
+                </svg>
+                <span>Export</span>
+              </button>
+            )}
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to history"
+                className={headerButtonClasses}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 3L5 8l5 5" />
+                </svg>
+                <span>Back</span>
+              </button>
+            )}
+          </div>
+        ) : null}
       </div>
       <div role="tabpanel" id={`panel-${active}`} aria-labelledby={`tab-${active}`}>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-8">

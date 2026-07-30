@@ -1,22 +1,23 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-30T07:29:39.223Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-30T08:14:10.237Z.
 
 ## Overview
 
-Article Enhancer Agent UI: paste an article URL, pick a content type, and watch the AI agent stream an enhanced draft, gap analysis, recommendations (citation opportunities, FAQ suggestions, and prioritized recommendations), and coverage verification inline on the same page.
+Article Enhancer Agent UI — paste an article URL, pick a content type, and watch an enhanced version stream in live with gap analysis, recommendations, and coverage verification, plus per-visitor run history.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 44
 
 ## Features
 
-- Inline streaming results on the same page — no full-screen takeover and no View Results CTA
-- Recommendations tab renders three labeled sections: Citation Opportunities, FAQ Suggestions, and Recommendations with structured fields
+- Streaming article enhancement with live progress checklist
 - Tabbed results: Enhanced Article, Coverage Verification, Gap Analysis, Recommendations
-- Pipeline progress checklist with live status chip and elapsed timer
-- History view with the same tabbed result format
-- Print/PDF export mirror of the on-screen results
+- Structured Recommendations tab with Citation Opportunities, FAQ Suggestions, and Recommendations sections
+- Wider generator form layout
+- History tab with aligned Back / Export actions and read-only run detail
+- Print/PDF export mirroring the on-screen UI
+- Arena email gate with access-denied page
 
 ## Tech Stack
 
@@ -152,14 +153,10 @@ Article Enhancer Agent UI: paste an article URL, pick a content type, and watch 
 
 ## Latest Change
 
-- **Updated at:** 2026-07-30T07:29:39.223Z
+- **Updated at:** 2026-07-30T08:14:10.237Z
 - **Request:** Here are the issues i found:
-1. On click of enhance article CTA: The page is going to FULLSCREEN (Ideally it should not)
-2. We should show the results on the same page rater than showing VIEW RESULTS CTA
-3. Inside Recommendation tab: we need to show 3 sections with its values:
- a. citation_opportunities (claim or stats, placement, Source_name, source_url)
- b. faq_suggestions (questions, suggested answers, why it matters)
- c. recommendations (placement, priority, rationale, recommendation)
-
+1. Under Recommendation tab, the recommendation section data os not showing properly, its just showing placeholder
+2. Increase the width ofthe form
+3. In the history tab: When the user clicks the any history, the UI is kind of breaking becuase of Back and Export cta. Alsign it properly
 
 Keep rest everything as is

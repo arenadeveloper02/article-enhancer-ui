@@ -12,6 +12,47 @@ import { SectionHeader } from '@/components/SectionHeader'
 const CITATION_CATEGORY = 'Citation Opportunity'
 const FAQ_CATEGORY = 'FAQ Suggestion'
 
+type Bucket = 'citation' | 'faq' | 'main'
+
+/**
+ * Tolerant partitioning: exact category matches (CITATION_CATEGORY /
+ * FAQ_CATEGORY) are honored first, and any loose category value that merely
+ * mentions "citation" or "faq" routes to the matching section too. Everything
+ * else lands in the main Recommendations section — so items never disappear
+ * behind a category mismatch and the section never shows an empty placeholder
+ * while data exists.
+ */
+function bucketOf(item: RecommendationItem): Bucket {
+  const cat = (item.category ?? '').trim().toLowerCase()
+  if (cat === CITATION_CATEGORY.toLowerCase() || cat.includes('citation')) return 'citation'
+  if (cat === FAQ_CATEGORY.toLowerCase() || cat.includes('faq')) return 'faq'
+  return 'main'
+}
+
+/**
+ * Resolves the primary display text for a main-section recommendation item.
+ * Some stream payloads lack a structured `recommendation` field; in that case
+ * the normalizer stores a truncated (ellipsised) preview in `title` and the
+ * FULL text in `detail`. Rendering the truncated preview looks like a broken
+ * placeholder — so when the title is a truncated prefix of the detail text,
+ * the full detail is shown as the main content instead.
+ */
+function resolveMainText(item: RecommendationItem): { main: string; extraDetail: string } {
+  const rec = (item.recommendation ?? '').trim()
+  const detail = item.detail.trim()
+  if (rec) {
+    return { main: rec, extraDetail: detail && detail !== rec ? detail : '' }
+  }
+  const title = item.title.trim()
+  if (detail && title.endsWith('…')) {
+    const prefix = title.slice(0, -1).trim()
+    if (prefix && detail.replace(/\s+/g, ' ').startsWith(prefix.replace(/\s+/g, ' '))) {
+      return { main: detail, extraDetail: '' }
+    }
+  }
+  return { main: title, extraDetail: detail && detail !== title ? detail : '' }
+}
+
 interface RecommendationsCardProps {
   data: RecommendationsData | null
   status: SectionStatus
@@ -74,7 +115,7 @@ function CitationItemList({ items }: { items: RecommendationItem[] }) {
           !item.placement && !item.sourceName && !item.sourceUrl && item.detail && item.detail !== claim
         return (
           <ItemShell key={index} index={index}>
-            <h3 className="text-sm font-semibold text-ink">{claim}</h3>
+            <h3 className="text-sm font-semibold leading-relaxed text-ink">{claim}</h3>
             <div className="space-y-1.5">
               {item.placement ? <FieldRow label="Placement">{item.placement}</FieldRow> : null}
               {item.sourceName ? <FieldRow label="Source name">{item.sourceName}</FieldRow> : null}
@@ -114,7 +155,7 @@ function FaqItemList({ items }: { items: RecommendationItem[] }) {
         const answer = item.answer || (item.detail !== question ? item.detail : '')
         return (
           <ItemShell key={index} index={index}>
-            <h3 className="text-sm font-semibold text-ink">{question}</h3>
+            <h3 className="text-sm font-semibold leading-relaxed text-ink">{question}</h3>
             <div className="space-y-1.5">
               {answer ? <FieldRow label="Suggested answer">{answer}</FieldRow> : null}
               {item.whyItMatters ? <FieldRow label="Why it matters">{item.whyItMatters}</FieldRow> : null}
@@ -131,11 +172,11 @@ function RecommendationItemList({ items }: { items: RecommendationItem[] }) {
   return (
     <ol className="space-y-3">
       {items.map((item, index) => {
-        const main = item.recommendation || item.title
+        const { main, extraDetail } = resolveMainText(item)
         return (
           <ItemShell key={index} index={index}>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold text-ink">{main}</h3>
+              <h3 className="min-w-0 text-sm font-semibold leading-relaxed text-ink">{main}</h3>
               {item.priority ? (
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${priorityClasses(item.priority)}`}
@@ -147,9 +188,7 @@ function RecommendationItemList({ items }: { items: RecommendationItem[] }) {
             <div className="space-y-1.5">
               {item.placement ? <FieldRow label="Placement">{item.placement}</FieldRow> : null}
               {item.rationale ? <FieldRow label="Rationale">{item.rationale}</FieldRow> : null}
-              {!item.rationale && item.detail && item.detail !== main ? (
-                <FieldRow label="Detail">{item.detail}</FieldRow>
-              ) : null}
+              {!item.rationale && extraDetail ? <FieldRow label="Detail">{extraDetail}</FieldRow> : null}
             </div>
           </ItemShell>
         )
@@ -167,11 +206,9 @@ export function RecommendationsCard({ data, status, embedded = false }: Recommen
   const items = data ? data.recommendations : []
   const done = status === 'done' || status === 'empty'
 
-  const citationItems = items.filter((item) => item.category === CITATION_CATEGORY)
-  const faqItems = items.filter((item) => item.category === FAQ_CATEGORY)
-  const mainItems = items.filter(
-    (item) => item.category !== CITATION_CATEGORY && item.category !== FAQ_CATEGORY,
-  )
+  const citationItems = items.filter((item) => bucketOf(item) === 'citation')
+  const faqItems = items.filter((item) => bucketOf(item) === 'faq')
+  const mainItems = items.filter((item) => bucketOf(item) === 'main')
 
   return (
     <section

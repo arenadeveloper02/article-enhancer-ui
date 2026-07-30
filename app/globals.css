@@ -84,6 +84,28 @@ body {
   }
 }
 
+/* ── Generator width ─────────────────────────────────────────────────────
+   The Generator (EnhancerClient) constrains its form/results column with a
+   max-w-* utility wrapper. These scoped overrides widen the FORM and its
+   containing column to a roomier 64rem without touching any other view:
+   - the form itself (in case the max-width utility sits on the <form>)
+   - any ancestor wrapper that contains the form or the results section.
+   The article reading column inside ResultCard keeps its own max-w-[68ch]
+   because these selectors never match it. */
+.enhancer-wide form {
+  width: 100%;
+  max-width: 64rem !important;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.enhancer-wide [class*='max-w-']:has(form),
+.enhancer-wide [class*='max-w-']:has(section[aria-label='Enhancement results']) {
+  max-width: 64rem !important;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* ── Export / Print ──────────────────────────────────────────────────────
    The Export/Print feature prints THIS page via window.print(). The
    .print-report container (components/PrintableReport.tsx) reuses the exact

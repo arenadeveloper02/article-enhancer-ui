@@ -358,20 +358,19 @@ export function EnhancerClient() {
   }
 
   /** Re-normalizes a panel's accumulated text and pushes any usable data into state. */
-  function applyPanel(panel: PanelKey): void {
-    markPanelStreaming(panel)
-    const text = targetAccumRef.current[panel]
-    if (!text.trim()) return
+  function renormalizePanel(panel: PanelKey): void {
+    const accumulated = targetAccumRef.current[panel]
+    if (!accumulated.trim()) return
     if (panel === 'article') {
-      const article = articleFromAccumulated(text)
-      if (article.trim()) {
+      const text = articleFromAccumulated(accumulated)
+      if (text.trim()) {
         dataPresentRef.current.article = true
-        setContent(article)
+        setContent(text)
       }
       return
     }
     if (panel === 'gapanalysis') {
-      const data = normalizeGapAnalysis(text)
+      const data = normalizeGapAnalysis(accumulated)
       if (!isGapEmpty(data)) {
         gapRef.current = data
         dataPresentRef.current.gapanalysis = true
@@ -380,7 +379,7 @@ export function EnhancerClient() {
       return
     }
     if (panel === 'recommendations') {
-      const data = normalizeRecommendations(text)
+      const data = normalizeRecommendations(accumulated)
       if (data.recommendations.length > 0) {
         recRef.current = data
         dataPresentRef.current.recommendations = true
@@ -388,7 +387,7 @@ export function EnhancerClient() {
       }
       return
     }
-    const data = normalizeCoverage(text)
+    const data = normalizeCoverage(accumulated)
     if (!isCovEmpty(data)) {
       covRef.current = data
       dataPresentRef.current.coverage = true
@@ -396,280 +395,209 @@ export function EnhancerClient() {
     }
   }
 
-  /** Routes a streamed chunk to its panel (by blockId prefix, name, or content heuristics). */
-  function routeChunk(blockId: string, chunk: string): void {
-    if (!chunk) return
-    const known = blockTargetRef.current[blockId]
-    if (known) {
-      if (known === 'status-theme' || known === 'status-research') {
-        setStatusMessage(statusLabelFor(known))
-        return
-      }
-      targetAccumRef.current[known] += chunk
-      applyPanel(known)
-      return
-    }
-    const accumulated = (blockAccumRef.current[blockId] ?? '') + chunk
-    blockAccumRef.current[blockId] = accumulated
-    let target: BlockTarget | null = resolveBlockTarget(blockId)
-    if (!target) target = classifyUnknownPayload(accumulated)
-    if (!target) return
-    blockTargetRef.current[blockId] = target
-    if (target === 'status-theme' || target === 'status-research') {
-      setStatusMessage(statusLabelFor(target))
-      return
-    }
-    targetAccumRef.current[target] += accumulated
-    blockAccumRef.current[blockId] = ''
-    applyPanel(target)
-  }
-
-  /** Applies whatever structured outputs have been merged so far to every panel. */
+  /**
+   * Applies any structured outputs collected so far (dotted keys such as
+   * gapanalysis.coverage_gaps, recommendations.citation_opportunities,
+   * coverageverifier.criteria, enhancedarticlewriter.content) to the panels.
+   * Runs after every event AND at [DONE], so the Recommendations tab renders
+   * real data - never placeholders - as soon as the workflow emits it.
+   */
   function applyMergedOutputs(): void {
     const merged = finalOutputRef.current
     if (!merged) return
 
-    if (!dataPresentRef.current.article || content.trim().length === 0) {
-      const articleValue = findMergedValue(merged, [
-        'enhancedarticlewriter.content',
-        'enhanced_article',
-        'enhancedarticle',
-        'article',
-        'content',
-      ])
-      const article = articleTextFrom(parseIfJsonLike(articleValue))
-      if (article.trim()) {
-        dataPresentRef.current.article = true
-        setContent(article)
-        markPanelStreaming('article')
-      }
-    }
-
-    const strengths = findMergedValue(merged, ['gapanalysis.competitor_strengths', 'competitor_strengths'])
-    const gaps = findMergedValue(merged, ['gapanalysis.coverage_gaps', 'coverage_gaps'])
-    const underdeveloped = findMergedValue(merged, [
-      'gapanalysis.underdeveloped_sections',
-      'underdeveloped_sections',
+    const articleValue = findMergedValue(merged, [
+      'enhancedarticlewriter.content',
+      'enhanced_article',
+      'content',
     ])
-    if (strengths !== undefined || gaps !== undefined || underdeveloped !== undefined) {
-      const gap = normalizeGapAnalysis({
-        competitor_strengths: strengths,
-        coverage_gaps: gaps,
-        underdeveloped_sections: underdeveloped,
-      })
-      if (!isGapEmpty(gap)) {
-        gapRef.current = gap
-        dataPresentRef.current.gapanalysis = true
-        setGapData(gap)
-        markPanelStreaming('gapanalysis')
-      }
+    const articleStr = articleTextFrom(parseIfJsonLike(articleValue))
+    if (articleStr.trim() && articleStr.trim().length > targetAccumRef.current.article.trim().length) {
+      targetAccumRef.current.article = articleStr
+      dataPresentRef.current.article = true
+      setContent(articleStr)
+      markPanelStreaming('article')
     }
 
-    // Recommendations combine THREE upstream outputs so the tab always shows
-    // its three sections: citation_opportunities, faq_suggestions, and the
-    // primary recommendations list.
-    const recList = findMergedValue(merged, ['recommendations.recommendations', 'recommendations'])
-    const citations = findMergedValue(merged, [
-      'recommendations.citation_opportunities',
-      'citation_opportunities',
-    ])
-    const faqs = findMergedValue(merged, ['recommendations.faq_suggestions', 'faq_suggestions'])
-    if (recList !== undefined || citations !== undefined || faqs !== undefined) {
-      const rec = normalizeRecommendations({
-        recommendations: recList,
-        citation_opportunities: citations,
-        faq_suggestions: faqs,
-      })
-      if (rec.recommendations.length > 0) {
-        recRef.current = rec
-        dataPresentRef.current.recommendations = true
-        setRecData(rec)
-        markPanelStreaming('recommendations')
-      }
+    const gap = normalizeGapAnalysis(merged)
+    if (!isGapEmpty(gap)) {
+      gapRef.current = gap
+      dataPresentRef.current.gapanalysis = true
+      setGapData(gap)
+      markPanelStreaming('gapanalysis')
     }
 
-    const overallScore = findMergedValue(merged, ['coverageverifier.overall_score', 'overall_score'])
-    const passed = findMergedValue(merged, ['coverageverifier.passed', 'passed'])
-    const summary = findMergedValue(merged, ['coverageverifier.summary', 'summary'])
-    const criteria = findMergedValue(merged, ['coverageverifier.criteria', 'criteria'])
-    if (overallScore !== undefined || passed !== undefined || summary !== undefined || criteria !== undefined) {
-      const cov = normalizeCoverage({
-        overall_score: overallScore,
-        passed,
-        summary,
-        criteria,
-      })
-      if (!isCovEmpty(cov)) {
-        covRef.current = cov
-        dataPresentRef.current.coverage = true
-        setCoverage(cov)
-        markPanelStreaming('coverage')
-      }
+    const rec = normalizeRecommendations(merged)
+    if (rec.recommendations.length > 0) {
+      recRef.current = rec
+      dataPresentRef.current.recommendations = true
+      setRecData(rec)
+      markPanelStreaming('recommendations')
+    }
+
+    const cov = normalizeCoverage(merged)
+    if (!isCovEmpty(cov)) {
+      covRef.current = cov
+      dataPresentRef.current.coverage = true
+      setCoverage(cov)
+      markPanelStreaming('coverage')
     }
   }
 
-  /** Final salvage pass: mines the raw transcript for any panel that stayed empty. */
-  function salvageFromTranscript(): void {
-    const raw = rawTranscriptRef.current + '\n' + looseTextRef.current
-    if (!raw.trim()) return
-    if (!dataPresentRef.current.article) {
-      const value = extractKeyValue(raw, 'content') ?? extractKeyValue(raw, 'enhanced_article')
-      const article = articleTextFrom(value)
-      if (article.trim()) {
-        dataPresentRef.current.article = true
-        setContent(article)
+  function handleStreamEvent(raw: unknown): void {
+    if (typeof raw === 'string') {
+      rawTranscriptRef.current += `${raw}\n`
+      const trimmed = raw.trim()
+      if (trimmed && isHeartbeatMessage(trimmed)) {
+        setStatusMessage(trimmed)
+      } else if (trimmed) {
+        looseTextRef.current += raw
+        const panel = classifyUnknownPayload(looseTextRef.current)
+        if (panel) {
+          targetAccumRef.current[panel] = looseTextRef.current
+          markPanelStreaming(panel)
+          renormalizePanel(panel)
+        }
+      }
+      return
+    }
+    const rec = asRecord(raw)
+    if (!rec) return
+
+    try {
+      rawTranscriptRef.current += `${JSON.stringify(rec)}\n`
+    } catch {
+      // Non-serializable event - transcript salvage simply skips it.
+    }
+
+    const status = firstStringOf(rec, ['status', 'message'])
+    if (status && isHeartbeatMessage(status)) {
+      setStatusMessage(status)
+    }
+
+    const blockId = firstStringOf(rec, ['blockId', 'block_id', 'blockid', 'blockName', 'blockname'])
+    const chunk = chunkTextOf(rec)
+
+    let target: BlockTarget | null = null
+    let newlyClassified = false
+    if (blockId) {
+      target = blockTargetRef.current[blockId] ?? resolveBlockTarget(blockId)
+    }
+    if (blockId && chunk) {
+      blockAccumRef.current[blockId] = (blockAccumRef.current[blockId] ?? '') + chunk
+      if (!target) {
+        const classified = classifyUnknownPayload(blockAccumRef.current[blockId])
+        if (classified) {
+          target = classified
+          newlyClassified = true
+        }
+      }
+      if (target) blockTargetRef.current[blockId] = target
+    }
+
+    if (target === 'status-theme' || target === 'status-research') {
+      setStatusMessage(statusLabelFor(target))
+    } else if (target) {
+      const panel = target
+      if (chunk) {
+        if (newlyClassified && blockId) {
+          targetAccumRef.current[panel] += blockAccumRef.current[blockId] ?? ''
+        } else {
+          targetAccumRef.current[panel] += chunk
+        }
+        markPanelStreaming(panel)
+        renormalizePanel(panel)
+      }
+    } else if (chunk) {
+      looseTextRef.current += chunk
+      if (!isHeartbeatMessage(chunk)) {
+        const panel = classifyUnknownPayload(looseTextRef.current)
+        if (panel) {
+          targetAccumRef.current[panel] = looseTextRef.current
+          markPanelStreaming(panel)
+          renormalizePanel(panel)
+        }
       }
     }
-    if (!dataPresentRef.current.gapanalysis) {
-      const gap = normalizeGapAnalysis({
-        competitor_strengths: extractKeyValue(raw, 'competitor_strengths'),
-        coverage_gaps: extractKeyValue(raw, 'coverage_gaps'),
-        underdeveloped_sections: extractKeyValue(raw, 'underdeveloped_sections'),
-      })
-      if (!isGapEmpty(gap)) {
-        dataPresentRef.current.gapanalysis = true
-        setGapData(gap)
-      }
-    }
-    if (!dataPresentRef.current.recommendations) {
-      const rec = normalizeRecommendations({
-        recommendations: extractKeyValue(raw, 'recommendations'),
-        citation_opportunities: extractKeyValue(raw, 'citation_opportunities'),
-        faq_suggestions: extractKeyValue(raw, 'faq_suggestions'),
-      })
-      if (rec.recommendations.length > 0) {
-        dataPresentRef.current.recommendations = true
-        setRecData(rec)
-      }
-    }
-    if (!dataPresentRef.current.coverage) {
-      const cov = normalizeCoverage({
-        overall_score: extractKeyValue(raw, 'overall_score'),
-        passed: extractKeyValue(raw, 'passed'),
-        summary: extractKeyValue(raw, 'summary'),
-        criteria: extractKeyValue(raw, 'criteria'),
-      })
-      if (!isCovEmpty(cov)) {
-        dataPresentRef.current.coverage = true
-        setCoverage(cov)
-      }
-    }
+
+    // Merge any structured (non-chunk) outputs the event carries and apply
+    // them immediately - this is how the Recommendations / Gap Analysis /
+    // Coverage tabs receive their real data.
+    const merged = finalOutputRef.current ?? {}
+    collectStructured(rec, merged, 0)
+    finalOutputRef.current = merged
+    applyMergedOutputs()
   }
 
   function finalizeRun(): void {
     if (doneRef.current) return
     doneRef.current = true
-    salvageFromTranscript()
+    applyMergedOutputs()
+
+    // Salvage pass: mine the raw transcript for any panel that never received
+    // routable data.
+    const transcript = rawTranscriptRef.current
+    if (transcript.trim()) {
+      if (!dataPresentRef.current.article) {
+        for (const key of ['enhanced_article', 'content', 'article']) {
+          const value = extractKeyValue(transcript, key)
+          const text = articleTextFrom(value)
+          if (text.trim()) {
+            setContent(text)
+            dataPresentRef.current.article = true
+            break
+          }
+        }
+      }
+      if (!dataPresentRef.current.gapanalysis) {
+        const gap = normalizeGapAnalysis(transcript)
+        if (!isGapEmpty(gap)) {
+          setGapData(gap)
+          dataPresentRef.current.gapanalysis = true
+        }
+      }
+      if (!dataPresentRef.current.recommendations) {
+        const rec = normalizeRecommendations(transcript)
+        if (rec.recommendations.length > 0) {
+          setRecData(rec)
+          dataPresentRef.current.recommendations = true
+        }
+      }
+      if (!dataPresentRef.current.coverage) {
+        const cov = normalizeCoverage(transcript)
+        if (!isCovEmpty(cov)) {
+          setCoverage(cov)
+          dataPresentRef.current.coverage = true
+        }
+      }
+    }
+
     setStages({
       gapanalysis: 'done',
       recommendations: 'done',
       enhancedarticlewriter: 'done',
       coverageverifier: 'done',
     })
-    setSections(() => {
-      const next = { ...INITIAL_SECTIONS }
-      for (const panel of ALL_PANELS) {
-        next[panel] = dataPresentRef.current[panel] ? 'done' : 'empty'
-      }
-      return next
-    })
+    const nextSections: Record<PanelKey, SectionStatus> = { ...INITIAL_SECTIONS }
+    for (const panel of ALL_PANELS) {
+      nextSections[panel] = dataPresentRef.current[panel] ? 'done' : 'empty'
+    }
+    setSections(nextSections)
     setStatusMessage('')
     setPhase('done')
   }
 
-  /** Handles one line of the SSE / NDJSON stream. */
-  function handleStreamLine(line: string): void {
-    if (doneRef.current) return
-    const trimmed = line.trim()
-    if (!trimmed) return
-    if (/^(event|id|retry):/.test(trimmed)) return
-    const dataText = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed
-    if (!dataText) return
-    if (dataText === '[DONE]') {
-      finalizeRun()
-      return
-    }
-    rawTranscriptRef.current += `\n${dataText}`
-
-    const parsed = extractBalancedJson(dataText)
-    const rec = asRecord(parsed)
-    if (!rec) {
-      // Plain text payload — heartbeat messages update the status chip;
-      // everything else routes through the loose-text classifier.
-      if (isHeartbeatMessage(dataText)) {
-        setStatusMessage(dataText)
-        return
-      }
-      looseTextRef.current += dataText
-      routeChunk('loose-text-block', dataText)
-      return
-    }
-
-    const blockId = firstStringOf(rec, ['blockId', 'block_id', 'blockid', 'blockName', 'blockname', 'block'])
-    const chunk = chunkTextOf(rec)
-    const message = firstStringOf(rec, ['message', 'status'])
-
-    if (message && !chunk) {
-      setStatusMessage(message)
-    }
-
-    if (chunk) {
-      if (!blockId && isHeartbeatMessage(chunk)) {
-        setStatusMessage(chunk.trim())
-      } else {
-        routeChunk(blockId || 'unknown-block', chunk)
-      }
-    }
-
-    // Merge any structured outputs carried on this event and apply them
-    // immediately — panels render as soon as usable data appears.
-    const merged = finalOutputRef.current ?? {}
-    collectStructured(rec, merged, 0)
-    finalOutputRef.current = merged
-    applyMergedOutputs()
-
-    const doneFlag = rec['done']
-    const eventName = firstStringOf(rec, ['event', 'type'])
-    if (doneFlag === true || eventName === 'done' || eventName === 'complete') {
-      finalizeRun()
-    }
-  }
-
-  function validate(): EnhanceFormErrors {
-    const next: EnhanceFormErrors = {}
-    const url = articleUrl.trim()
-    if (!url) {
-      next.articleUrl = 'Please enter the article URL.'
-    } else {
-      try {
-        const parsed = new URL(url)
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          next.articleUrl = 'The URL must start with http:// or https://.'
-        }
-      } catch {
-        next.articleUrl = 'Please enter a valid URL (including https://).'
-      }
-    }
-    if (!contentType) {
-      next.contentType = 'Please choose a content type.'
-    }
-    if (contentType === 'Other' && !otherType.trim()) {
-      next.otherType = 'Please describe the content type.'
-    }
-    return next
-  }
-
-  async function startRun(payload: EnhancePayload): Promise<void> {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+  async function runEnhancement(payload: EnhancePayload): Promise<void> {
     resetRun()
     lastPayloadRef.current = payload
     setSubmittedUrl(payload.article_url)
     setPhase('streaming')
-    setStatusMessage('Contacting the enhancement agent…')
     startRef.current = Date.now()
-    markStageActive('gapanalysis')
+    setStatusMessage('Contacting the enhancement agent…')
+
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
 
     try {
       const res = await fetch('/api/enhance', {
@@ -680,24 +608,26 @@ export function EnhancerClient() {
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
-        throw new Error(body?.error || `The enhancement service returned an error (${res.status}).`)
+        throw new Error(body?.error || `The enhancement request failed (${res.status}).`)
       }
 
       const resContentType = res.headers.get('content-type') ?? ''
       if (resContentType.includes('application/json')) {
-        // Non-streamed fallback: apply the whole JSON body at once.
+        // Non-streamed fallback: a single JSON body with the full outputs.
         const data: unknown = await res.json()
-        try {
-          rawTranscriptRef.current += `\n${JSON.stringify(data)}`
-        } catch {
-          // Ignore serialization issues — salvage still runs on what we have.
-        }
         const rec = asRecord(data)
         if (rec) {
+          try {
+            rawTranscriptRef.current += `${JSON.stringify(rec)}\n`
+          } catch {
+            // Skip transcript when serialization fails.
+          }
           const merged = finalOutputRef.current ?? {}
           collectStructured(rec, merged, 0)
           finalOutputRef.current = merged
           applyMergedOutputs()
+        } else if (typeof data === 'string') {
+          rawTranscriptRef.current += `${data}\n`
         }
         finalizeRun()
         return
@@ -716,113 +646,172 @@ export function EnhancerClient() {
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
-        for (const singleLine of lines) {
-          handleStreamLine(singleLine)
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+          const dataText = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed
+          if (!dataText || dataText === '[DONE]') continue
+          try {
+            handleStreamEvent(JSON.parse(dataText) as unknown)
+          } catch {
+            handleStreamEvent(dataText)
+          }
         }
       }
       buffer += decoder.decode()
-      if (buffer.trim()) {
-        handleStreamLine(buffer)
+      const rest = buffer.trim()
+      if (rest) {
+        const dataText = rest.startsWith('data:') ? rest.slice(5).trim() : rest
+        if (dataText && dataText !== '[DONE]') {
+          try {
+            handleStreamEvent(JSON.parse(dataText) as unknown)
+          } catch {
+            handleStreamEvent(dataText)
+          }
+        }
       }
       finalizeRun()
     } catch (err) {
       if (controller.signal.aborted) return
-      setPhase('error')
-      setStatusMessage('')
       setErrorMessage(
-        err instanceof Error ? err.message : 'Something went wrong while enhancing the article. Please try again.',
+        err instanceof Error ? err.message : 'Something went wrong. Please try again.',
       )
+      setStatusMessage('')
+      setPhase('error')
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    // preventDefault keeps the browser from performing a native form
-    // navigation — the run streams inline on THIS page, never full-screen.
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    const validation = validate()
-    setErrors(validation)
-    if (Object.keys(validation).length > 0) return
-    await startRun({
-      article_url: articleUrl.trim(),
+    if (phase === 'streaming') return
+    const nextErrors: EnhanceFormErrors = {}
+    const url = articleUrl.trim()
+    if (!url) {
+      nextErrors.articleUrl = 'Article URL is required.'
+    } else {
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          nextErrors.articleUrl = 'Enter a valid http(s) URL.'
+        }
+      } catch {
+        nextErrors.articleUrl = 'Enter a valid URL, including https://.'
+      }
+    }
+    if (!contentType) {
+      nextErrors.contentType = 'Select a content type.'
+    }
+    if (contentType === 'Other' && !otherType.trim()) {
+      nextErrors.otherType = 'Describe the content type.'
+    }
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+    const resolvedType = contentType === 'Other' ? otherType.trim() : contentType
+    void runEnhancement({
+      article_url: url,
       article_text: articleText.trim(),
-      content_type: contentType === 'Other' ? otherType.trim() : contentType,
+      content_type: resolvedType,
     })
   }
 
   function handleRetry(): void {
     const payload = lastPayloadRef.current
     if (payload) {
-      void startRun(payload)
+      void runEnhancement(payload)
     } else {
-      setPhase('idle')
       setErrorMessage('')
+      setPhase('idle')
     }
+  }
+
+  function handleCancel(): void {
+    abortRef.current?.abort()
+    finalizeRun()
   }
 
   async function handleExport(): Promise<void> {
     try {
       await document.fonts.ready
     } catch {
-      // Fonts API unavailable — print with whatever is loaded.
+      // Fonts API unavailable - print with whatever is loaded.
     }
     window.print()
   }
 
-  const started = phase !== 'idle'
-  const showResults = started && phase !== 'error'
+  const streaming = phase === 'streaming'
+  const showResults = phase === 'streaming' || phase === 'done'
+
   const checklistStages: ChecklistStage[] = STAGE_ORDER.map((id) => ({
     id,
     label: STAGE_LABELS[id],
     status: stages[id],
   }))
-  const streaming = phase === 'streaming'
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto w-full max-w-4xl">
       <div className="screen-only space-y-6">
         <form
-          onSubmit={(event) => {
-            void handleSubmit(event)
-          }}
-          noValidate
-          className="card-enter rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6"
+          onSubmit={handleSubmit}
+          aria-label="Article enhancement form"
+          className="card-enter rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-5 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label htmlFor="article-url" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft">
-                Article URL
+              <label htmlFor="article-url" className="mb-1.5 block text-sm font-medium text-ink">
+                Article URL <span className="text-rose-500">*</span>
               </label>
               <input
                 id="article-url"
                 type="url"
                 inputMode="url"
-                autoComplete="off"
+                placeholder="https://example.com/your-article"
                 value={articleUrl}
                 onChange={(event) => setArticleUrl(event.target.value)}
-                placeholder="https://example.com/blog/my-article"
                 disabled={streaming}
-                aria-invalid={Boolean(errors.articleUrl)}
+                aria-invalid={errors.articleUrl ? true : undefined}
                 className={`${inputBase} ${errors.articleUrl ? 'border-rose-300' : 'border-slate-200'}`}
               />
               {errors.articleUrl ? (
-                <p role="alert" className="mt-1 text-xs font-medium text-rose-600">
-                  {errors.articleUrl}
-                </p>
+                <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleUrl}</p>
               ) : null}
             </div>
+
+            <div className="sm:col-span-2">
+              <label htmlFor="article-text" className="mb-1.5 block text-sm font-medium text-ink">
+                Article text{' '}
+                <span className="text-xs font-normal text-slate-400">
+                  (optional — the agent reads the article from the URL when omitted)
+                </span>
+              </label>
+              <textarea
+                id="article-text"
+                rows={7}
+                placeholder="Paste the full article text here…"
+                value={articleText}
+                onChange={(event) => setArticleText(event.target.value)}
+                disabled={streaming}
+                className={`${inputBase} resize-y border-slate-200`}
+              />
+              {errors.articleText ? (
+                <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.articleText}</p>
+              ) : null}
+            </div>
+
             <div>
-              <label htmlFor="content-type" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft">
-                Content type
+              <label htmlFor="content-type" className="mb-1.5 block text-sm font-medium text-ink">
+                Content type <span className="text-rose-500">*</span>
               </label>
               <select
                 id="content-type"
                 value={contentType}
                 onChange={(event) => setContentType(event.target.value)}
                 disabled={streaming}
-                aria-invalid={Boolean(errors.contentType)}
+                aria-invalid={errors.contentType ? true : undefined}
                 className={`${inputBase} ${errors.contentType ? 'border-rose-300' : 'border-slate-200'}`}
               >
-                <option value="">Select a content type…</option>
+                <option value="" disabled>
+                  Select a content type…
+                </option>
                 {CONTENT_TYPES.map((type) => (
                   <option key={type} value={type}>
                     {type}
@@ -830,79 +819,56 @@ export function EnhancerClient() {
                 ))}
               </select>
               {errors.contentType ? (
-                <p role="alert" className="mt-1 text-xs font-medium text-rose-600">
-                  {errors.contentType}
-                </p>
+                <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.contentType}</p>
               ) : null}
             </div>
+
             {contentType === 'Other' ? (
               <div>
-                <label htmlFor="other-type" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft">
-                  Describe the content type
+                <label htmlFor="other-type" className="mb-1.5 block text-sm font-medium text-ink">
+                  Describe the content type <span className="text-rose-500">*</span>
                 </label>
                 <input
                   id="other-type"
                   type="text"
+                  placeholder="e.g. Comparison page"
                   value={otherType}
                   onChange={(event) => setOtherType(event.target.value)}
-                  placeholder="e.g. Case study"
                   disabled={streaming}
-                  aria-invalid={Boolean(errors.otherType)}
+                  aria-invalid={errors.otherType ? true : undefined}
                   className={`${inputBase} ${errors.otherType ? 'border-rose-300' : 'border-slate-200'}`}
                 />
                 {errors.otherType ? (
-                  <p role="alert" className="mt-1 text-xs font-medium text-rose-600">
-                    {errors.otherType}
-                  </p>
+                  <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.otherType}</p>
                 ) : null}
               </div>
             ) : null}
-            <div className="sm:col-span-2">
-              <label htmlFor="article-text" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-soft">
-                Article text <span className="font-normal normal-case text-slate-400">(optional)</span>
-              </label>
-              <textarea
-                id="article-text"
-                rows={6}
-                value={articleText}
-                onChange={(event) => setArticleText(event.target.value)}
-                placeholder="Paste the article text here, or leave empty and the agent will read it from the URL."
-                disabled={streaming}
-                className={`${inputBase} resize-y border-slate-200`}
-              />
-            </div>
           </div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">
-              Results stream live below on this page — no new window, no full-screen takeover.
-            </p>
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <button
               type="submit"
               disabled={streaming}
-              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {streaming ? (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
-                  />
-                  Enhancing…
-                </>
-              ) : (
-                'Enhance article'
-              )}
+              {streaming ? 'Enhancing…' : 'Enhance article'}
             </button>
+            {streaming ? (
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-soft transition hover:border-rose-200 hover:text-rose-600"
+              >
+                Cancel
+              </button>
+            ) : null}
+            {streaming && statusMessage ? (
+              <StatusChip message={statusMessage} elapsedSeconds={elapsed} />
+            ) : null}
           </div>
         </form>
 
-        {streaming ? (
-          <div className="flex justify-center">
-            <StatusChip message={statusMessage || 'Working on it…'} elapsedSeconds={elapsed} />
-          </div>
-        ) : null}
-
-        {showResults ? <ProgressChecklist stages={checklistStages} /> : null}
+        {streaming ? <ProgressChecklist stages={checklistStages} /> : null}
 
         {phase === 'error' ? <ErrorCard message={errorMessage} onRetry={handleRetry} /> : null}
 
@@ -917,9 +883,13 @@ export function EnhancerClient() {
             recData={recData}
             recStatus={sections.recommendations}
             articleUrl={submittedUrl || undefined}
-            onExport={() => {
-              void handleExport()
-            }}
+            onExport={
+              phase === 'done'
+                ? () => {
+                    void handleExport()
+                  }
+                : undefined
+            }
           />
         ) : null}
       </div>

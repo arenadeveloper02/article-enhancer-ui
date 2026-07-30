@@ -7,10 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Per-run execution log. createdAt persists the run timestamp at execution
+// time — /api/history reads it back to enrich upstream history entries that
+// lack their own timestamp.
 model EnhancementLog {
   id          String   @id @default(cuid())
   articleUrl  String
   contentType String
   email       String?
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
 }
