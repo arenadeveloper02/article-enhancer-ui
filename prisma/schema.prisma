@@ -7,8 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Lightweight request log written by app/api/enhance/route.ts.
-// Columns match the live database — never edit or drop existing fields.
 model EnhancementLog {
   id          String   @id @default(cuid())
   articleUrl  String

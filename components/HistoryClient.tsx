@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { HistoryEntry } from '@/lib/types'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
+import { ResultTabs } from '@/components/ResultTabs'
+import { normalizeCoverage, normalizeGapAnalysis, normalizeRecommendations } from '@/lib/normalize'
 
 // NOTE: History lives in in-memory React state only — it is re-fetched from
 // the build-history workflow each time this view mounts and resets on page
@@ -36,8 +38,9 @@ function firstText(rec: Record<string, unknown>, keys: string[]): string {
 
 /**
  * Breadth-first search across the upstream response for the first array of
- * history-entry-like values. Handles envelopes such as { output: { "buildhistory.result": [...] } },
- * { result: [...] }, JSON encoded as strings, and arbitrary nesting.
+ * history-entry-like values. Handles envelopes such as
+ * { output: { result: { history: [...] } } }, { result: [...] }, JSON encoded
+ * as strings, and arbitrary nesting.
  */
 function extractEntriesSource(data: unknown): unknown[] {
   const queue: unknown[] = [data]
@@ -68,6 +71,11 @@ function extractEntriesSource(data: unknown): unknown[] {
     if (isRecord(current)) {
       if (seen.has(current)) continue
       seen.add(current)
+      // Prefer an explicit history array when present.
+      const history = current['history']
+      if (Array.isArray(history) && history.length > 0 && history.every((item) => isRecord(item))) {
+        return history
+      }
       for (const value of Object.values(current)) queue.push(value)
     }
   }
@@ -99,10 +107,32 @@ function toHistoryEntry(raw: unknown, index: number): HistoryEntry {
     }
   }
   const rec = isRecord(raw) ? raw : {}
+
+  // Structured build-history entries carry input (article_url / content_type)
+  // and output (gap_analysis / recommendations / enhanced_article /
+  // coverage_report) — mirror the Generator's data shape from them.
+  const input = isRecord(rec.input) ? rec.input : null
+  const output = isRecord(rec.output) ? rec.output : null
+
+  const articleUrl =
+    (input ? firstText(input, ['article_url', 'url']) : '') || firstText(rec, ['article_url', 'url'])
+  const contentType =
+    (input ? firstText(input, ['content_type', 'contentType']) : '') ||
+    firstText(rec, ['content_type', 'contentType'])
+
+  const enhancedRaw = output ? output['enhanced_article'] : undefined
+  const articleContent = typeof enhancedRaw === 'string' ? enhancedRaw : ''
+  const gapData = output && 'gap_analysis' in output ? normalizeGapAnalysis(output['gap_analysis']) : null
+  const recData =
+    output && 'recommendations' in output ? normalizeRecommendations(output['recommendations']) : null
+  const coverageData =
+    output && 'coverage_report' in output ? normalizeCoverage(output['coverage_report']) : null
+
   const keyword =
-    firstText(rec, ['target_keyword', 'keyword', 'article_url', 'url', 'title', 'topic', 'h1', 'name']) ||
+    articleUrl ||
+    firstText(rec, ['target_keyword', 'keyword', 'title', 'topic', 'h1', 'name']) ||
     'Untitled run'
-  const client = firstText(rec, ['client', 'brand', 'client_brand', 'company', 'content_type'])
+  const client = contentType || firstText(rec, ['client', 'brand', 'client_brand', 'company'])
   const timestampRaw = firstText(rec, [
     'timestamp',
     'created_at',
@@ -112,26 +142,34 @@ function toHistoryEntry(raw: unknown, index: number): HistoryEntry {
     'time',
     'updated_at',
   ])
-  let content = firstText(rec, [
-    'output',
-    'result',
-    'content',
-    'article',
-    'enhanced_article',
-    'markdown',
-    'recommendations',
-    'body',
-    'text',
-    'data',
-  ])
+  let content =
+    articleContent ||
+    firstText(rec, [
+      'output',
+      'result',
+      'content',
+      'article',
+      'enhanced_article',
+      'markdown',
+      'recommendations',
+      'body',
+      'text',
+      'data',
+    ])
   if (!content) content = valueToText(rec)
   return {
     id: firstText(rec, ['id', '_id', 'uuid', 'run_id']) || `history-${index}`,
     keyword,
     client,
     timestamp: timestampRaw || null,
-    preview: derivePreview(content, keyword),
+    preview: derivePreview(articleContent || content, keyword),
     content,
+    articleUrl: articleUrl || undefined,
+    contentType: contentType || undefined,
+    articleContent: articleContent || undefined,
+    gapData,
+    recData,
+    coverageData,
   }
 }
 
@@ -158,6 +196,15 @@ function formatTimestamp(value: string | null): string {
 function looksLikeJson(content: string): boolean {
   const trimmed = content.trim()
   return trimmed.startsWith('{') || trimmed.startsWith('[')
+}
+
+function hasStructuredResults(entry: HistoryEntry): boolean {
+  return (
+    (typeof entry.articleContent === 'string' && entry.articleContent.trim().length > 0) ||
+    entry.gapData != null ||
+    entry.recData != null ||
+    entry.coverageData != null
+  )
 }
 
 export function HistoryClient() {
@@ -189,6 +236,54 @@ export function HistoryClient() {
   }, [load])
 
   if (selected) {
+    // Structured runs render the EXACT same tabbed format as the Generator
+    // (Enhanced Article / Coverage Verification / Gap Analysis /
+    // Recommendations) via the shared ResultTabs component.
+    if (hasStructuredResults(selected)) {
+      const articleText = selected.articleContent ?? ''
+      return (
+        <section aria-label="History run detail" className="mx-auto max-w-5xl">
+          <div className="card-enter mb-4 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-card sm:px-6">
+            <div className="min-w-0">
+              <h2 className="truncate font-display text-lg font-semibold text-ink">
+                {selected.articleUrl || selected.keyword}
+              </h2>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+                {selected.contentType ? (
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-accent-deep">
+                    {selected.contentType}
+                  </span>
+                ) : null}
+                <span className="tabular-nums">{formatTimestamp(selected.timestamp)}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Read-only
+                </span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="shrink-0 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              ← Back to history
+            </button>
+          </div>
+          <ResultTabs
+            content={articleText}
+            articleStatus={articleText.trim() ? 'done' : 'empty'}
+            coverageData={selected.coverageData ?? null}
+            coverageStatus={selected.coverageData ? 'done' : 'empty'}
+            gapData={selected.gapData ?? null}
+            gapStatus={selected.gapData ? 'done' : 'empty'}
+            recData={selected.recData ?? null}
+            recStatus={selected.recData ? 'done' : 'empty'}
+            articleUrl={selected.articleUrl}
+          />
+        </section>
+      )
+    }
+
+    // Legacy / unstructured runs fall back to the raw markdown / JSON view.
     return (
       <section aria-label="History run detail" className="mx-auto max-w-3xl">
         <div className="card-enter overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
@@ -281,11 +376,13 @@ export function HistoryClient() {
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card transition hover:border-indigo-200 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-semibold text-ink">{entry.keyword}</h3>
+                    <h3 className="truncate text-sm font-semibold text-ink">
+                      {entry.articleUrl || entry.keyword}
+                    </h3>
                     <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
-                      {entry.client ? (
+                      {entry.contentType || entry.client ? (
                         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-accent-deep">
-                          {entry.client}
+                          {entry.contentType || entry.client}
                         </span>
                       ) : null}
                       <span className="tabular-nums">{formatTimestamp(entry.timestamp)}</span>

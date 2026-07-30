@@ -82,6 +82,11 @@ export function ResultTabs({
   articleUrl,
 }: ResultTabsProps) {
   const [active, setActive] = useState<ResultTabKey>('article')
+  // The Enhanced Article tab expands to the full viewport by default. The
+  // other tabs keep their inline card layout untouched. Collapsing returns
+  // the article to the inline layout; re-selecting the tab re-expands it.
+  const [articleFullscreen, setArticleFullscreen] = useState(true)
+  const isArticleFullscreen = active === 'article' && articleFullscreen
 
   const gapCount = gapData
     ? gapData.competitor_strengths.length +
@@ -99,54 +104,109 @@ export function ResultTabs({
 
   const coveragePassed = coverageData ? coverageData.passed : null
 
-  return (
-    <section aria-label="Enhancement results">
-      <div className="sticky top-0 z-20 -mx-2 bg-surface/95 px-2 py-2 backdrop-blur">
-        <div
-          role="tablist"
-          aria-label="Result sections"
-          className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-card"
+  function handleTabClick(key: ResultTabKey): void {
+    setActive(key)
+    if (key === 'article') setArticleFullscreen(true)
+  }
+
+  const tabList = (
+    <div
+      role="tablist"
+      aria-label="Result sections"
+      className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-card"
+    >
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          role="tab"
+          id={`tab-${tab.key}`}
+          aria-selected={active === tab.key}
+          aria-controls={`panel-${tab.key}`}
+          onClick={() => handleTabClick(tab.key)}
+          className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
+            active === tab.key
+              ? 'bg-indigo-50 text-accent-deep'
+              : 'text-ink-soft hover:bg-slate-50 hover:text-ink'
+          }`}
         >
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              id={`tab-${tab.key}`}
-              aria-selected={active === tab.key}
-              aria-controls={`panel-${tab.key}`}
-              onClick={() => setActive(tab.key)}
-              className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
-                active === tab.key
-                  ? 'bg-indigo-50 text-accent-deep'
-                  : 'text-ink-soft hover:bg-slate-50 hover:text-ink'
+          <TabStatusIcon status={tab.status} />
+          <span>{tab.label}</span>
+          {tab.count !== null && (
+            <span
+              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+                active === tab.key ? 'bg-indigo-100 text-accent-deep' : 'bg-slate-100 text-slate-600'
               }`}
             >
-              <TabStatusIcon status={tab.status} />
-              <span>{tab.label}</span>
-              {tab.count !== null && (
-                <span
-                  className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
-                    active === tab.key ? 'bg-indigo-100 text-accent-deep' : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              )}
-              {tab.key === 'coverage' && coveragePassed !== null && (
-                <span
-                  aria-hidden="true"
-                  className={`h-2 w-2 shrink-0 rounded-full ${coveragePassed ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                />
-              )}
-              {tab.key === 'coverage' && coveragePassed !== null && (
-                <span className="sr-only">{coveragePassed ? 'passed' : 'failed'}</span>
-              )}
-              <span className="sr-only">({statusSrText(tab.status)})</span>
+              {tab.count}
+            </span>
+          )}
+          {tab.key === 'coverage' && coveragePassed !== null && (
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 shrink-0 rounded-full ${coveragePassed ? 'bg-emerald-500' : 'bg-rose-500'}`}
+            />
+          )}
+          {tab.key === 'coverage' && coveragePassed !== null && (
+            <span className="sr-only">{coveragePassed ? 'passed' : 'failed'}</span>
+          )}
+          <span className="sr-only">({statusSrText(tab.status)})</span>
+        </button>
+      ))}
+    </div>
+  )
+
+  // ── Full-screen Enhanced Article view ──────────────────────────────────
+  // Only the article tab's container changes: it becomes a fixed, full-
+  // viewport overlay. The tab bar stays visible at the top so switching
+  // tabs still works, and a Collapse button returns to the inline layout.
+  if (isArticleFullscreen) {
+    return (
+      <section aria-label="Enhancement results" className="fixed inset-0 z-50 flex flex-col bg-surface">
+        <div className="shrink-0 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1 overflow-x-auto">{tabList}</div>
+            <button
+              type="button"
+              onClick={() => setArticleFullscreen(false)}
+              aria-label="Exit full-screen article view"
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                className="h-3.5 w-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M6 2v4H2" />
+                <path d="M10 14v-4h4" />
+              </svg>
+              <span className="hidden sm:inline">Collapse</span>
             </button>
-          ))}
+          </div>
         </div>
-      </div>
+        <div
+          role="tabpanel"
+          id="panel-article"
+          aria-labelledby="tab-article"
+          className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 lg:px-12"
+        >
+          <div className="mx-auto w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-8">
+            <ResultCard content={content} status={articleStatus} embedded articleUrl={articleUrl} />
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  // ── Inline layout (unchanged for Coverage / Gap Analysis / Recommendations) ──
+  return (
+    <section aria-label="Enhancement results">
+      <div className="sticky top-0 z-20 -mx-2 bg-surface/95 px-2 py-2 backdrop-blur">{tabList}</div>
       <div
         role="tabpanel"
         id={`panel-${active}`}
@@ -154,7 +214,31 @@ export function ResultTabs({
         className="card-enter mt-3 max-h-[75vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-6 lg:p-8"
       >
         {active === 'article' && (
-          <ResultCard content={content} status={articleStatus} embedded articleUrl={articleUrl} />
+          <div>
+            <div className="mb-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setArticleFullscreen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                  className="h-3 w-3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M9 2h5v5" />
+                  <path d="M7 14H2V9" />
+                </svg>
+                Full screen
+              </button>
+            </div>
+            <ResultCard content={content} status={articleStatus} embedded articleUrl={articleUrl} />
+          </div>
         )}
         {active === 'coverage' && <CoverageCard data={coverageData} status={coverageStatus} embedded />}
         {active === 'gap' && <GapAnalysisCard data={gapData} status={gapStatus} embedded />}

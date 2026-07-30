@@ -74,6 +74,10 @@ export interface ArticleSegment {
 // build-history workflow response (tolerant of varying key names). History is
 // fetched fresh each time the view mounts — the client keeps it only in
 // in-memory React state, so it resets on page reload.
+//
+// Structured runs (the current build-history contract) carry the original
+// input (article_url / content_type) plus per-section outputs so the detail
+// view can render the exact same tabbed format as the Generator.
 export interface HistoryEntry {
   id: string
   keyword: string
@@ -81,4 +85,10 @@ export interface HistoryEntry {
   timestamp: string | null
   preview: string
   content: string
+  articleUrl?: string
+  contentType?: string
+  articleContent?: string
+  gapData?: GapAnalysisData | null
+  recData?: RecommendationsData | null
+  coverageData?: CoverageData | null
 }
