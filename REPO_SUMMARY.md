@@ -1,21 +1,21 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-30T06:03:27.137Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-30T06:43:15.771Z.
 
 ## Overview
 
-Streamed AI article enhancement UI with gap analysis, recommendations (including citation opportunities and FAQ suggestions), coverage verification, and persisted run history timestamps.
+Article Enhancer Agent UI with full-screen result tabs (Enhanced Article, Coverage Verification, Gap Analysis, Recommendations with Citation Opportunities and FAQ Suggestions sections), streaming enhancement pipeline, and history view.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 44
 
 ## Features
 
-- Streaming article enhancement with live panel updates
-- Gap analysis, recommendations, and coverage verification tabs
-- Citation opportunities and FAQ suggestions surfaced as recommendation entries
-- History view with persisted createdAt timestamps formatted as local date/time
-- PDF/print export mirroring the on-screen UI
+- Full-screen result tabs for every section with a single Back action (no collapsible layout)
+- Recommendations tab renders Citation Opportunities and FAQ Suggestions as dedicated sections
+- Live streaming enhancement pipeline with progress checklist and status chip
+- History view mirroring the same tabbed result format
+- Print/PDF export reusing the exact on-screen components
 
 ## Tech Stack
 
@@ -151,29 +151,28 @@ Streamed AI article enhancement UI with gap analysis, recommendations (including
 
 ## Latest Change
 
-- **Updated at:** 2026-07-30T06:03:27.137Z
-- **Request:** Make the following backend/frontend changes only. Do not change any other logic, styling, or response fields beyond what's listed below.
+- **Updated at:** 2026-07-30T06:43:15.771Z
+- **Request:** Make the following changes only. Do not change any other styling, colors, spacing, copy, or layout beyond what's explicitly listed below.
 
-1. Add createdAt to the history response
 
-The endpoint GET /api/history (called from https://article-enhancer-ui.vercel.app/api/history) currently does not return a createdAt field per run, which is why the UI falls back to showing "Unknown time".
-When a workflow run is triggered via https://agent.thearena.ai/api/workflows/38458816-0871-4c2f-8545-39654a5530cc/execute, that execution response already includes a createdAt timestamp. Persist this createdAt value when the run is saved/logged (e.g., in the DB record or cache entry for that run), and include it in the /api/history response payload for each item, e.g.:
-json
-{
-  "url": "https://www.gentledental.com/resources/articles/tooth-sensitivity",
-  "type": "Landing Page",
-  "createdAt": "2026-07-30T05:08:00.000Z",
-  ...
-}
-On the frontend, replace the "Unknown time" label with this createdAt value, formatted as a readable local date/time (e.g., Jul 30, 2026, 10:38 AM) instead of the raw ISO string.
 
-2. Surface additional recommendation fields from the second workflow
+In the view option or after running enhance article CTA,
+ As the Enhanced Article tab is full screen, make all the tabs full screen ... 
 
-The workflow https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute returns additional keys under recommendations that are currently not being read or displayed:
+Don't give the Collapsible option. 
+Just give back option ... 
+|
+
+FOr the post request 
+
+curl -X POST \
+  -H "X-API-Key: $SIM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"article_url":"example","article_text":"example","content_type":"example","email":"example","stream":true,"selectedOutputs":["enhancedarticlewriter.content","coverageverifier.citations_count","coverageverifier.citations_found","coverageverifier.criteria","coverageverifier.faq_added","coverageverifier.faq_questions_added","coverageverifier.overall_score","coverageverifier.passed","coverageverifier.summary","recommendations.citation_opportunities","recommendations.faq_suggestions","recommendations.recommendations","gapanalysis.competitor_strengths","gapanalysis.coverage_gaps","gapanalysis.underdeveloped_sections"]}' \
+  https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute
+
+
 recommendations.citation_opportunities
 recommendations.faq_suggestions
-Update the response parsing/mapping layer to pick up these two keys (in addition to whatever is already being read from recommendations) and pass them through to the frontend.
-In the Recommendations section of the UI, render these as additional entries/rows alongside the existing recommendation items — same list/card style already used for existing recommendation entries, no new UI pattern. If citation_opportunities or faq_suggestions is an array of objects, display each object's fields consistent with how other recommendation items are currently displayed (e.g., title + description), so it doesn't need a new layout.
-If either key is missing or empty in the response, don't render an empty section — same behavior as if other recommendation types were empty.
 
-Do not alter any other field mapping, tab layout, or existing recommendation types already being displayed.
+these should come as a section in the recommendations tab.

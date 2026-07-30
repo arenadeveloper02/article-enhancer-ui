@@ -9,14 +9,18 @@ const UPSTREAM_URL =
 const SIM_API_KEY = 'sk-sim-Vk9yj3QfVSZxJ8lulZTYK549u5ThZo9u'
 
 const SELECTED_OUTPUTS = [
-  'recommendations.recommendations',
-  'recommendations.citation_opportunities',
-  'recommendations.faq_suggestions',
   'enhancedarticlewriter.content',
+  'coverageverifier.citations_count',
+  'coverageverifier.citations_found',
   'coverageverifier.criteria',
+  'coverageverifier.faq_added',
+  'coverageverifier.faq_questions_added',
   'coverageverifier.overall_score',
   'coverageverifier.passed',
   'coverageverifier.summary',
+  'recommendations.citation_opportunities',
+  'recommendations.faq_suggestions',
+  'recommendations.recommendations',
   'gapanalysis.competitor_strengths',
   'gapanalysis.coverage_gaps',
   'gapanalysis.underdeveloped_sections',
