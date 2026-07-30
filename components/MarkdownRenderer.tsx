@@ -95,6 +95,25 @@ export function MarkdownRenderer({ content, baseUrl }: MarkdownRendererProps) {
               {children}
             </mark>
           ),
+          // Markdown pipe tables (via remark-gfm) render as real HTML tables
+          // with thead/tbody — never as raw pipe-delimited text. Inline
+          // formatting and <br> line breaks inside cells are preserved by
+          // the strong/code/br/mark components above (rehype-raw parses the
+          // literal <br> tags inside cells).
+          table: ({ children }) => (
+            <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full border-collapse text-sm">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-slate-50">{children}</thead>,
+          tbody: ({ children }) => <tbody className="divide-y divide-slate-100">{children}</tbody>,
+          tr: ({ children }) => <tr className="align-top">{children}</tr>,
+          th: ({ children }) => (
+            <th className="border-b border-slate-200 px-3 py-2 text-left font-semibold text-ink">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => <td className="px-3 py-2 align-top text-ink-soft">{children}</td>,
         }}
       >
         {content}

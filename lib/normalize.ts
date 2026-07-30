@@ -372,24 +372,29 @@ export function normalizeCoverage(raw: unknown): CoverageData {
     const rawCriteria = lookup(parsed, ['criteria', 'checks', 'criteria_results'])
     const criteriaArr: unknown[] = Array.isArray(rawCriteria)
       ? rawCriteria
-      : isRecord(rawCriteria)
-        ? [rawCriteria]
+      : typeof rawCriteria === 'string'
+        ? ((): unknown[] => {
+            const reparsed = extractBalancedJson(rawCriteria)
+            return Array.isArray(reparsed) ? reparsed : []
+          })()
         : []
     const criteria: CriteriaItem[] = []
     for (const entry of criteriaArr) {
       if (typeof entry === 'string') {
-        const text = decodeUnicodeEscapes(entry.trim())
-        if (text) criteria.push({ name: text, passed: null, score: null, notes: null })
+        const name = decodeUnicodeEscapes(entry.trim())
+        if (name) criteria.push({ name, passed: null, score: null, notes: null })
         continue
       }
       if (!isRecord(entry)) continue
-      const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'label'])
+      const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'label', 'check'])
       if (!name) continue
-      const notes = firstString(entry, ['notes', 'note', 'comment', 'reason', 'explanation', 'justification', 'rationale'])
+      const itemPassed = toBoolean(pick(entry, ['passed', 'pass', 'met', 'result']))
+      const score = clampScore(pick(entry, ['score', 'rating']))
+      const notes = firstString(entry, ['notes', 'justification', 'reason', 'explanation', 'detail', 'details', 'comment'])
       criteria.push({
         name: decodeUnicodeEscapes(name),
-        passed: toBoolean(pick(entry, ['passed', 'pass', 'met', 'satisfied'])),
-        score: clampScore(pick(entry, ['score', 'rating'])),
+        passed: itemPassed,
+        score,
         notes: notes ? decodeUnicodeEscapes(notes) : null,
       })
     }
@@ -399,157 +404,99 @@ export function normalizeCoverage(raw: unknown): CoverageData {
   }
 }
 
-/**
- * Pulls enhanced-article markdown out of a non-streamed JSON fallback payload.
- */
-export function extractArticleContent(raw: unknown): string {
-  try {
-    if (typeof raw === 'string') return raw
-    if (!isRecord(raw)) return ''
-    const found = lookup(raw, ['content', 'article', 'enhanced_article', 'markdown', 'text'])
-    return typeof found === 'string' ? found : ''
-  } catch {
-    return ''
-  }
-}
+// ── Article text preprocessing ──────────────────────────────────────────
+
+const BR_RE = /<br\s*\/?\s*>/gi
+const TABLE_DELIMITER_RE = /^\|?[\s:|-]+\|?$/
 
 /**
- * True when a normalized GapAnalysisData is still the all-empty default shape.
+ * Wraps a single line's content in <mark> while keeping markdown block
+ * structure valid: list/heading/quote prefixes stay outside the mark, and
+ * table rows get per-cell marks so the pipe structure survives.
  */
-export function isGapAnalysisEmpty(data: GapAnalysisData): boolean {
-  return (
-    data.competitor_strengths.length === 0 &&
-    data.coverage_gaps.length === 0 &&
-    data.underdeveloped_sections.length === 0
-  )
-}
-
-/**
- * True when a normalized RecommendationsData is still the empty default shape.
- */
-export function isRecommendationsEmpty(data: RecommendationsData): boolean {
-  return data.recommendations.length === 0
-}
-
-/**
- * True when a normalized CoverageData is still the all-null/empty default shape.
- */
-export function isCoverageEmpty(data: CoverageData): boolean {
-  return (
-    data.overall_score === null &&
-    data.passed === null &&
-    data.summary === null &&
-    data.criteria.length === 0
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Enhanced-article [+ADDED]…[/ADDED] marker handling
-// ────────────────────────────────────────────────────────────────────────────
-
-const ADDED_OPEN = '[+ADDED]'
-const ADDED_CLOSE = '[/ADDED]'
-
-/**
- * Hides a partially streamed marker token at the very end of the text so the
- * literal bracket characters never flash in the UI mid-stream.
- */
-function trimPartialMarker(text: string): string {
-  const maxLen = Math.max(ADDED_OPEN.length, ADDED_CLOSE.length) - 1
-  for (let len = Math.min(text.length, maxLen); len > 0; len--) {
-    const tail = text.slice(text.length - len)
-    if (ADDED_OPEN.startsWith(tail) || ADDED_CLOSE.startsWith(tail)) {
-      return text.slice(0, text.length - len)
-    }
-  }
-  return text
-}
-
-/**
- * Splits enhanced-article text into plain and added segments using the
- * [+ADDED]…[/ADDED] markers. Works progressively while streaming: an opening
- * marker without its closing pair still highlights the trailing text.
- */
-export function splitArticleSegments(content: string): ArticleSegment[] {
-  const text = trimPartialMarker(content)
-  const segments: ArticleSegment[] = []
-  let rest = text
-  while (rest.length > 0) {
-    const open = rest.indexOf(ADDED_OPEN)
-    if (open === -1) {
-      segments.push({ text: rest, added: false })
-      break
-    }
-    if (open > 0) segments.push({ text: rest.slice(0, open), added: false })
-    const afterOpen = rest.slice(open + ADDED_OPEN.length)
-    const close = afterOpen.indexOf(ADDED_CLOSE)
-    if (close === -1) {
-      if (afterOpen) segments.push({ text: afterOpen, added: true })
-      break
-    }
-    if (close > 0) segments.push({ text: afterOpen.slice(0, close), added: true })
-    rest = afterOpen.slice(close + ADDED_CLOSE.length)
-  }
-  return segments.filter((segment) => segment.text.length > 0)
-}
-
-/**
- * Wraps one line of added markdown in <mark> while keeping list/heading/quote
- * prefixes and table pipes OUTSIDE the tag so markdown structure still parses.
- */
-function highlightLine(line: string): string {
-  if (!line.trim()) return line
-  if (line.trimStart().startsWith('|')) {
+function markWrapLine(line: string): string {
+  const trimmed = line.trim()
+  if (!trimmed) return line
+  if (trimmed.startsWith('|')) {
+    if (TABLE_DELIMITER_RE.test(trimmed)) return line
     return line
       .split('|')
       .map((cell) => {
-        const inner = cell.trim()
-        if (!inner) return cell
-        if (/^[-: ]+$/.test(inner)) return cell
-        return cell.replace(inner, `<mark>${inner}</mark>`)
+        const cellText = cell.trim()
+        if (!cellText) return cell
+        return cell.replace(cellText, `<mark>${cellText}</mark>`)
       })
       .join('|')
   }
-  const prefixMatch = line.match(/^(\s*(?:(?:[-*+]|\d+[.)]|#{1,6}|>)\s+)?)([\s\S]*)$/)
-  if (prefixMatch && prefixMatch[2].trim()) {
-    return `${prefixMatch[1]}<mark>${prefixMatch[2]}</mark>`
-  }
-  return `<mark>${line}</mark>`
+  const match = line.match(/^(\s*(?:[-*+]\s+|\d+[.)]\s+|#{1,6}\s+|>\s+)?)([\s\S]*)$/)
+  if (match && match[2].trim()) return `${match[1]}<mark>${match[2]}</mark>`
+  return line
 }
 
-function markAddedText(text: string): string {
-  return text
+function markWrap(inner: string): string {
+  return inner
     .split('\n')
-    .map((line) => highlightLine(line))
+    .map((line) => markWrapLine(line))
     .join('\n')
 }
 
 /**
- * Converts <br> tags to markdown hard breaks OUTSIDE table rows (tables need
- * their <br> cell separators preserved for GFM parsing).
- */
-function convertLineBreaks(content: string): string {
-  return content
-    .split('\n')
-    .map((line) => (line.trimStart().startsWith('|') ? line : line.replace(/<br\s*\/?>/gi, '  \n')))
-    .join('\n')
-}
-
-/**
- * Single shared preprocessing step for the article panel: normalizes <br>
- * usage and converts [+ADDED]…[/ADDED] markers into inline <mark> highlights.
- * Progressive while streaming — raw marker tokens never reach the renderer.
+ * Shared preprocessing for enhanced-article markdown before rendering:
+ * - <br> tags become real line breaks EXCEPT inside markdown table rows,
+ *   where they stay inline (rehype-raw renders them) so the row structure
+ *   and in-cell line breaks are preserved.
+ * - A blank line is inserted before table blocks so remark-gfm reliably
+ *   parses pipe tables into real HTML tables.
+ * - [+ADDED]…[/ADDED] markers become inline <mark> highlights, applied
+ *   progressively while streaming (an unclosed trailing marker still
+ *   highlights). The raw marker tokens never reach the renderer.
  */
 export function preprocessArticleContent(content: string): string {
-  const normalized = convertLineBreaks(content)
-  return splitArticleSegments(normalized)
-    .map((segment) => (segment.added ? markAddedText(segment.text) : segment.text))
-    .join('')
+  let text = decodeUnicodeEscapes(content)
+  text = text
+    .split('\n')
+    .map((line) => (line.trimStart().startsWith('|') ? line : line.replace(BR_RE, '\n')))
+    .join('\n')
+  const lines = text.split('\n')
+  const out: string[] = []
+  for (const line of lines) {
+    const isTableRow = line.trimStart().startsWith('|')
+    const prev = out.length > 0 ? out[out.length - 1] : ''
+    if (isTableRow && prev.trim() !== '' && !prev.trimStart().startsWith('|')) out.push('')
+    out.push(line)
+  }
+  text = out.join('\n')
+  text = text.replace(/\[\+ADDED\]([\s\S]*?)\[\/ADDED\]/g, (_m: string, inner: string) => markWrap(inner))
+  text = text.replace(/\[\+ADDED\]([\s\S]*)$/, (_m: string, inner: string) => markWrap(inner))
+  text = text.replace(/\[\/ADDED\]/g, '')
+  return text
 }
 
 /**
- * Removes [+ADDED]/[/ADDED] marker tokens entirely (clipboard / word counts).
+ * Removes [+ADDED]/[/ADDED] markers and converts <br> tags to line breaks —
+ * used for clipboard copies and word counts (plain text, no highlights).
  */
 export function stripArticleMarkers(content: string): string {
-  return trimPartialMarker(content).replace(/\[\+ADDED\]/g, '').replace(/\[\/ADDED\]/g, '')
+  return decodeUnicodeEscapes(content)
+    .replace(/\[\+ADDED\]/g, '')
+    .replace(/\[\/ADDED\]/g, '')
+    .replace(BR_RE, '\n')
+}
+
+/**
+ * Splits article text into plain/added segments on [+ADDED]…[/ADDED] markers.
+ */
+export function splitArticleSegments(content: string): ArticleSegment[] {
+  const segments: ArticleSegment[] = []
+  const re = /\[\+ADDED\]([\s\S]*?)(?:\[\/ADDED\]|$)/g
+  let lastIndex = 0
+  let match = re.exec(content)
+  while (match !== null) {
+    if (match.index > lastIndex) segments.push({ text: content.slice(lastIndex, match.index), added: false })
+    segments.push({ text: match[1], added: true })
+    lastIndex = re.lastIndex
+    match = re.exec(content)
+  }
+  if (lastIndex < content.length) segments.push({ text: content.slice(lastIndex), added: false })
+  return segments
 }

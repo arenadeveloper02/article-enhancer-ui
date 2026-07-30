@@ -1,42 +1,53 @@
-# Article Enhancer Agent
+# article-enhancer-ui
 
-A single-page, streaming article enhancement UI. Paste an article URL and text, pick a content type, and watch an AI agent stream back an enhanced, Markdown-formatted version live.
+Article Enhancer Agent UI — widened Generator/History containers, real createdAt timestamps in History, full-screen History view with explicit Back and Export, and proper HTML table rendering for markdown tables.
 
 ## Features
 
-- Validated form (Article URL, Article Text, Content Type with an "Other" free-text option)
-- Server-side `/api/enhance` proxy — the workflow API key stays on the server, never in the client bundle
-- Live SSE / chunked-text streaming with progressive token rendering
-- Graceful non-streamed JSON fallback
-- Unicode escape sequences (e.g. `\u2013`) are always decoded into real characters, even when double-escaped
-- Heartbeat / progress messages are routed into a pulsing status chip with a live elapsed timer — never mixed into the answer
-- Animated gradient progress line on the result card while streaming (respects `prefers-reduced-motion`)
-- Markdown rendering via `react-markdown` + `remark-gfm`
-- Loading skeleton, on-brand error card with retry, visible keyboard focus states
-- Request logging to Postgres via Prisma (non-blocking)
+- Streaming article enhancement with live progress checklist
+- Widened centered containers for Generator form and History list
+- History runs show real createdAt date/time in readable local format
+- History View always opens full-screen with explicit Back button
+- Export (print) available in both Generator and History full-screen views
+- Markdown tables rendered as real HTML tables with thead/tbody, preserving inline formatting and <br> in cells
 
-## Tech stack
+## Tech Stack
 
-- Next.js 15 (App Router) + React 19 + TypeScript (strict)
-- Tailwind CSS 3
-- react-markdown + remark-gfm
-- Prisma + Neon Postgres
+- Next.js ^15.3.3 (App Router)
+- React ^19.0.0
+- Tailwind CSS v3
+- TypeScript
+- Prisma + PostgreSQL (Neon on Vercel)
 
-## Local setup
+## Routes
+
+- `/`
+- `/access-denied`
+
+## Getting Started
 
 ```bash
 npm install
-cp .env.example .env   # set DATABASE_URL to a Postgres connection string
+cp .env.example .env
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Build & deploy
+## Database
 
-```bash
-npm run build   # runs prisma generate && prisma db push && next build
-npm start
-```
+1. Copy `.env.example` to `.env` for local development
+2. Set `DATABASE_URL` to your Postgres connection string
+3. Run `npx prisma db push` before `npm run dev` if tables are missing
 
-On Vercel with a connected Neon database, `DATABASE_URL` is injected automatically.
+On Vercel, `DATABASE_URL` is injected when Neon is connected to the project.
+
+## Scripts
+
+- `npm run dev` — start the development server
+- `npm run build` — production build (runs Prisma generate/push when configured)
+- `npm run start` — run the production server locally
+
+## Deploy
+
+This project is intended for deployment on [Vercel](https://vercel.com). Connect the GitHub repository and deploy the `main` branch.

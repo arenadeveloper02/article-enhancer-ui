@@ -19,6 +19,13 @@ interface ResultTabsProps {
   recData: RecommendationsData | null
   recStatus: SectionStatus
   articleUrl?: string
+  /**
+   * When provided (History view), the full-screen header shows an explicit
+   * Back button instead of the Collapse toggle — no collapse behavior.
+   */
+  onBack?: () => void
+  /** When provided, an Export button appears in the article views. */
+  onExport?: () => void
 }
 
 function TabStatusIcon({ status }: { status: SectionStatus }) {
@@ -80,11 +87,15 @@ export function ResultTabs({
   recData,
   recStatus,
   articleUrl,
+  onBack,
+  onExport,
 }: ResultTabsProps) {
   const [active, setActive] = useState<ResultTabKey>('article')
   // The Enhanced Article tab expands to the full viewport by default. The
   // other tabs keep their inline card layout untouched. Collapsing returns
   // the article to the inline layout; re-selecting the tab re-expands it.
+  // When onBack is provided (History view) the collapse toggle is replaced
+  // by an explicit Back action and the article always opens full-screen.
   const [articleFullscreen, setArticleFullscreen] = useState(true)
   const isArticleFullscreen = active === 'article' && articleFullscreen
 
@@ -108,6 +119,26 @@ export function ResultTabs({
     setActive(key)
     if (key === 'article') setArticleFullscreen(true)
   }
+
+  const exportButtonClasses =
+    'flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent'
+
+  const exportIcon = (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 2v8" />
+      <path d="M4.5 6.5L8 10l3.5-3.5" />
+      <path d="M3 13.5h10" />
+    </svg>
+  )
 
   const tabList = (
     <div
@@ -159,34 +190,70 @@ export function ResultTabs({
   // ── Full-screen Enhanced Article view ──────────────────────────────────
   // Only the article tab's container changes: it becomes a fixed, full-
   // viewport overlay. The tab bar stays visible at the top so switching
-  // tabs still works, and a Collapse button returns to the inline layout.
+  // tabs still works. In the Generator a Collapse button returns to the
+  // inline layout; in History (onBack set) an explicit Back button returns
+  // to the history list instead — no collapse toggle.
   if (isArticleFullscreen) {
     return (
       <section aria-label="Enhancement results" className="fixed inset-0 z-50 flex flex-col bg-surface">
         <div className="shrink-0 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-4">
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1 overflow-x-auto">{tabList}</div>
-            <button
-              type="button"
-              onClick={() => setArticleFullscreen(false)}
-              aria-label="Exit full-screen article view"
-              className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              <svg
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-                className="h-3.5 w-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            {onExport && (
+              <button
+                type="button"
+                onClick={onExport}
+                aria-label="Export as PDF / print"
+                className={exportButtonClasses}
               >
-                <path d="M6 2v4H2" />
-                <path d="M10 14v-4h4" />
-              </svg>
-              <span className="hidden sm:inline">Collapse</span>
-            </button>
+                {exportIcon}
+                <span className="hidden sm:inline">Export</span>
+              </button>
+            )}
+            {onBack ? (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to history"
+                className={exportButtonClasses}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 3L5 8l5 5" />
+                </svg>
+                Back
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setArticleFullscreen(false)}
+                aria-label="Exit full-screen article view"
+                className={exportButtonClasses}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M6 2v4H2" />
+                  <path d="M10 14v-4h4" />
+                </svg>
+                <span className="hidden sm:inline">Collapse</span>
+              </button>
+            )}
           </div>
         </div>
         <div
@@ -215,7 +282,30 @@ export function ResultTabs({
       >
         {active === 'article' && (
           <div>
-            <div className="mb-3 flex justify-end">
+            <div className="mb-3 flex justify-end gap-2">
+              {onExport && (
+                <button
+                  type="button"
+                  onClick={onExport}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-ink-soft transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    aria-hidden="true"
+                    className="h-3 w-3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M8 2v8" />
+                    <path d="M4.5 6.5L8 10l3.5-3.5" />
+                    <path d="M3 13.5h10" />
+                  </svg>
+                  Export
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setArticleFullscreen(true)}
