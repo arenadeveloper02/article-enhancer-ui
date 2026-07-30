@@ -1,14 +1,15 @@
 # article-enhancer-ui
 
-Article Enhancer with a wider, more compact desktop layout: ~92% viewport content width capped at 1600px, tightened header spacing (48px top, 32px to the first card), centered title and 760px description, aligned Generator/History toggle, and a wrap-friendly workflow grid with no horizontal scrollbar — all existing functionality preserved.
+Article Enhancer UI — fixed the Recommendations tab normalization so Citation Opportunities, FAQ Suggestions, and Recommendations are always populated from any upstream payload shape (keyed envelopes, nested recommendations objects, keyless JSON array sequences, and per-item field-shape classification). No UI or unrelated logic changes.
 
 ## Features
 
-- Responsive UI with Tailwind CSS
-- Next.js App Router pages and components
 - Streaming article enhancement with live progress
-- History view with tabbed result detail and PDF export
-- Wide compact desktop layout (92% viewport, 1600px cap) with consistent spacing
+- Gap Analysis, Recommendations, and Coverage Verification tabs
+- Recommendations tab always populates citation opportunities, FAQ suggestions, and recommendations
+- History view with structured run detail
+- Print/PDF export mirror
+- Arena email gate with access-denied page
 
 ## Tech Stack
 

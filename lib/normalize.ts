@@ -329,114 +329,231 @@ function toRecommendationItems(rawList: unknown, defaultCategory: string | null)
   return items
 }
 
+// Categories the Recommendations tab partitions on. normalizeRecommendations
+// tags items sourced from citation_opportunities / faq_suggestions with these
+// EXACT values so the three sections (Citation Opportunities, FAQ Suggestions,
+// Recommendations) are ALWAYS populated whenever the upstream payload carries
+// their data — regardless of which envelope or shape it arrives in.
+const CITATION_CATEGORY = 'Citation Opportunity'
+const FAQ_CATEGORY = 'FAQ Suggestion'
+
+type RecSectionKey = 'citation' | 'faq' | 'main'
+
+/**
+ * Classifies a keyless array of items by inspecting the field names of its
+ * entries: claim/source-shaped items are citation opportunities,
+ * question/answer-shaped items are FAQ suggestions, and
+ * recommendation/priority/rationale-shaped items are main recommendations.
+ * Returns null when nothing in the array is recognizably shaped.
+ */
+function classifyRecArray(arr: unknown[]): RecSectionKey | null {
+  let citation = 0
+  let faq = 0
+  let main = 0
+  for (const item of arr) {
+    if (!isRecord(item)) continue
+    const keys = Object.keys(item).map((key) => key.toLowerCase())
+    if (keys.some((key) => key.includes('claim') || key.includes('source') || key.includes('citation'))) {
+      citation++
+    } else if (keys.some((key) => key.includes('question') || key.includes('answer') || key.includes('faq'))) {
+      faq++
+    } else if (
+      keys.some(
+        (key) =>
+          key.includes('recommendation') ||
+          key === 'rationale' ||
+          key === 'priority' ||
+          key === 'placement',
+      )
+    ) {
+      main++
+    }
+  }
+  if (citation === 0 && faq === 0 && main === 0) return null
+  if (citation >= faq && citation >= main) return 'citation'
+  if (faq >= main) return 'faq'
+  return 'main'
+}
+
+/**
+ * Ensures every item carries a category the Recommendations tab can partition
+ * on. Items without an explicit category are routed by their structured
+ * fields: claim/source data → Citation Opportunity, question/answer data →
+ * FAQ Suggestion. Everything else stays in the main Recommendations section.
+ * This guarantees citation/FAQ-shaped items never render as "0 — No data"
+ * just because a payload flattened all three lists together.
+ */
+function withDerivedCategory(item: RecommendationItem): RecommendationItem {
+  const cat = (item.category ?? '').trim()
+  if (cat) return item
+  if (item.claim || item.sourceName || item.sourceUrl) return { ...item, category: CITATION_CATEGORY }
+  if (item.question || item.answer || item.whyItMatters) return { ...item, category: FAQ_CATEGORY }
+  return item
+}
+
 export function normalizeRecommendations(raw: unknown): RecommendationsData {
   try {
     const parsed = parseMaybe(raw)
-    let list: unknown = parsed
-    if (isRecord(parsed)) {
-      const found = lookup(parsed, ['recommendations'])
-      if (found !== undefined) {
-        list = found
-        if (isRecord(found)) {
-          const inner = lookup(found, ['recommendations'])
-          if (inner !== undefined) list = inner
+
+    // 1) Tolerant keyed lookups for each of the three structured sections
+    //    (exact, dotted "recommendations.citation_opportunities", one nested
+    //    level — all handled by lookup()).
+    let citations = lookup(parsed, ['citation_opportunities', 'citationopportunities', 'citation_opportunity', 'citations'])
+    let faqs = lookup(parsed, ['faq_suggestions', 'faqsuggestions', 'faq_suggestion', 'faqs'])
+    let recs = lookup(parsed, ['recommendations', 'recommendation'])
+
+    // 2) The block often nests ALL THREE sections under its own
+    //    "recommendations" envelope — unwrap it so citation_opportunities and
+    //    faq_suggestions are never lost behind the outer key.
+    if (isRecord(recs)) {
+      const inner: Record<string, unknown> = recs
+      const innerCitations = lookup(inner, ['citation_opportunities', 'citationopportunities', 'citations'])
+      const innerFaqs = lookup(inner, ['faq_suggestions', 'faqsuggestions', 'faqs'])
+      const innerRecs = lookup(inner, ['recommendations', 'items', 'list'])
+      if (citations === undefined && innerCitations !== undefined) citations = innerCitations
+      if (faqs === undefined && innerFaqs !== undefined) faqs = innerFaqs
+      if (innerRecs !== undefined) recs = innerRecs
+    }
+
+    // 3) Bare-array payloads: the whole payload is the main list; per-item
+    //    category derivation below still routes citation/FAQ-shaped entries
+    //    into their sections.
+    if (citations === undefined && faqs === undefined && recs === undefined && Array.isArray(parsed)) {
+      recs = parsed
+    }
+
+    // 4) Keyless / raw-text salvage: some stream runs emit the block output as
+    //    a plain SEQUENCE of JSON values with no wrapping keys. Scan every
+    //    balanced JSON value in the raw text, honor keyed objects, classify
+    //    unkeyed arrays by their item shapes, then fall back to the upstream
+    //    output order (citation_opportunities, faq_suggestions,
+    //    recommendations) for anything still unclassified — so no section
+    //    silently stays at "0 — No data" when its data streamed in.
+    if (typeof raw === 'string' && (citations === undefined || faqs === undefined || recs === undefined)) {
+      const values = extractAllBalancedJson(raw)
+      const unkeyedArrays: unknown[][] = []
+      for (const value of values) {
+        if (isRecord(value)) {
+          if (citations === undefined) {
+            const found = lookup(value, ['citation_opportunities', 'citationopportunities', 'citations'])
+            if (found !== undefined) citations = found
+          }
+          if (faqs === undefined) {
+            const found = lookup(value, ['faq_suggestions', 'faqsuggestions', 'faqs'])
+            if (found !== undefined) faqs = found
+          }
+          if (recs === undefined) {
+            const found = lookup(value, ['recommendations'])
+            if (found !== undefined) recs = found
+          }
+          continue
+        }
+        if (Array.isArray(value)) unkeyedArrays.push(value)
+      }
+      const unclassified: unknown[][] = []
+      for (const arr of unkeyedArrays) {
+        const section = classifyRecArray(arr)
+        if (section === 'citation' && citations === undefined) citations = arr
+        else if (section === 'faq' && faqs === undefined) faqs = arr
+        else if (section === 'main' && recs === undefined) recs = arr
+        else unclassified.push(arr)
+      }
+      if (unclassified.length === 1 && recs === undefined) {
+        recs = unclassified[0]
+      } else {
+        for (const arr of unclassified) {
+          if (citations === undefined) citations = arr
+          else if (faqs === undefined) faqs = arr
+          else if (recs === undefined) recs = arr
         }
       }
     }
-    const items = toRecommendationItems(list, null)
 
-    // Additional recommendation outputs from the workflow:
-    // recommendations.citation_opportunities and recommendations.faq_suggestions.
-    // They are tagged with fixed categories so the Recommendations tab can
-    // partition them into their own titled sections; missing or empty keys
-    // contribute nothing (same behavior as other empty types).
-    const containers: unknown[] = [parsed]
-    if (isRecord(parsed)) {
-      const found = lookup(parsed, ['recommendations'])
-      if (isRecord(found)) containers.push(found)
-    }
-    let citationsRaw: unknown
-    let faqsRaw: unknown
-    for (const container of containers) {
-      if (citationsRaw === undefined) {
-        citationsRaw = lookup(container, ['citation_opportunities', 'citationopportunities', 'citations'])
-      }
-      if (faqsRaw === undefined) {
-        faqsRaw = lookup(container, ['faq_suggestions', 'faqsuggestions', 'faqs'])
-      }
-    }
-    const combined = [
-      ...items,
-      ...toRecommendationItems(citationsRaw, 'Citation Opportunity'),
-      ...toRecommendationItems(faqsRaw, 'FAQ Suggestion'),
-    ]
+    // 5) Build the combined list with the section categories the card
+    //    partitions on, deriving categories for uncategorized items from
+    //    their structured fields.
+    const items: RecommendationItem[] = [
+      ...toRecommendationItems(citations, CITATION_CATEGORY),
+      ...toRecommendationItems(faqs, FAQ_CATEGORY),
+      ...toRecommendationItems(recs, null),
+    ].map(withDerivedCategory)
 
-    const hasKnownPriority = combined.some(
-      (item) => typeof item.priority === 'string' && item.priority in PRIORITY_RANK,
+    const catOf = (item: RecommendationItem): string => (item.category ?? '').toLowerCase()
+    const citationItems = items.filter((item) => catOf(item).includes('citation'))
+    const faqItems = items.filter((item) => catOf(item).includes('faq'))
+    const mainItems = items.filter(
+      (item) => !catOf(item).includes('citation') && !catOf(item).includes('faq'),
     )
-    if (hasKnownPriority) {
-      const ranked = combined.map((item, index) => ({ item, index }))
-      ranked.sort((a, b) => {
-        const rankA =
-          typeof a.item.priority === 'string' && a.item.priority in PRIORITY_RANK
-            ? PRIORITY_RANK[a.item.priority]
-            : 3
-        const rankB =
-          typeof b.item.priority === 'string' && b.item.priority in PRIORITY_RANK
-            ? PRIORITY_RANK[b.item.priority]
-            : 3
-        return rankA === rankB ? a.index - b.index : rankA - rankB
-      })
-      return { recommendations: ranked.map((r) => r.item) }
+    // Stable priority ordering (high → medium → low → unranked) for the main
+    // recommendations only; citation / FAQ items keep upstream order.
+    const rankOf = (item: RecommendationItem): number => {
+      const p = (item.priority ?? '').toLowerCase()
+      return p in PRIORITY_RANK ? PRIORITY_RANK[p] : 3
     }
-    return { recommendations: combined }
+    const sortedMain = [...mainItems].sort((a, b) => rankOf(a) - rankOf(b))
+
+    return { recommendations: [...citationItems, ...faqItems, ...sortedMain] }
   } catch {
     return { recommendations: [] }
   }
 }
 
-function toBooleanish(value: unknown): boolean | null {
+function toBooleanValue(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value
-  if (typeof value === 'number') return value !== 0
   if (typeof value === 'string') {
-    const lower = value.trim().toLowerCase()
-    if (lower === 'true' || lower === 'pass' || lower === 'passed' || lower === 'yes') return true
-    if (lower === 'false' || lower === 'fail' || lower === 'failed' || lower === 'no') return false
+    const v = value.trim().toLowerCase()
+    if (v === 'true' || v === 'yes' || v === 'pass' || v === 'passed' || v === 'y') return true
+    if (v === 'false' || v === 'no' || v === 'fail' || v === 'failed' || v === 'n') return false
+  }
+  if (typeof value === 'number') {
+    if (value === 1) return true
+    if (value === 0) return false
   }
   return null
 }
 
-function toNumberish(value: unknown): number | null {
+function toScoreValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value.trim())
-    if (value.trim() && Number.isFinite(parsed)) return parsed
+  if (typeof value === 'string' && value.trim()) {
+    const num = Number(value.trim())
+    if (Number.isFinite(num)) return num
   }
   return null
 }
 
-function toCriteria(value: unknown): CriteriaItem[] {
+function toCriteriaItems(value: unknown): CriteriaItem[] {
   let list = value
   if (typeof list === 'string') {
     const parsed = extractBalancedJson(list)
-    list = Array.isArray(parsed) || isRecord(parsed) ? parsed : []
+    list = parsed === null ? splitToLines(list) : parsed
   }
-  const arr: unknown[] = Array.isArray(list) ? list : isRecord(list) ? [list] : []
+  let arr: unknown[]
+  if (Array.isArray(list)) {
+    arr = list
+  } else if (isRecord(list)) {
+    arr = Object.entries(list).map(([name, entry]) =>
+      isRecord(entry) ? { name, ...entry } : { name, passed: entry },
+    )
+  } else {
+    arr = []
+  }
   const items: CriteriaItem[] = []
   for (const entry of arr) {
     if (typeof entry === 'string') {
-      const text = decodeUnicodeEscapes(entry.trim())
-      if (text) items.push({ name: text, passed: null, score: null, notes: null })
+      const name = decodeUnicodeEscapes(entry.trim())
+      if (name) items.push({ name, passed: null, score: null, notes: null })
       continue
     }
     if (!isRecord(entry)) continue
     const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'label', 'check'])
-    if (!name) continue
-    const notes = firstString(entry, ['notes', 'justification', 'reason', 'detail', 'details', 'explanation', 'comment'])
+    const passed = toBooleanValue(pick(entry, ['passed', 'pass', 'met', 'satisfied', 'ok']))
+    const score = toScoreValue(pick(entry, ['score', 'value', 'rating', 'points']))
+    const notes = firstString(entry, ['notes', 'note', 'justification', 'reason', 'explanation', 'detail', 'details', 'comment', 'comments'])
+    if (!name && !notes && passed === null && score === null) continue
     items.push({
-      name: decodeUnicodeEscapes(name),
-      passed: toBooleanish(pick(entry, ['passed', 'pass', 'met', 'status'])),
-      score: toNumberish(pick(entry, ['score', 'value', 'points', 'rating'])),
+      name: decodeUnicodeEscapes(name || 'Criterion'),
+      passed,
+      score,
       notes: notes ? decodeUnicodeEscapes(notes) : null,
     })
   }
@@ -446,76 +563,51 @@ function toCriteria(value: unknown): CriteriaItem[] {
 export function normalizeCoverage(raw: unknown): CoverageData {
   try {
     const parsed = parseMaybe(raw)
-    const score = toNumberish(lookup(parsed, ['overall_score', 'overallscore', 'score']))
-    const passed = toBooleanish(lookup(parsed, ['passed', 'pass']))
-    const summaryRaw = lookup(parsed, ['summary', 'overview', 'assessment'])
+    const overall = toScoreValue(lookup(parsed, ['overall_score', 'overallscore', 'score']))
+    const passed = toBooleanValue(lookup(parsed, ['passed', 'pass']))
+    const summaryRaw = lookup(parsed, ['summary', 'overview'])
     const summary =
-      typeof summaryRaw === 'string' && summaryRaw.trim()
-        ? decodeUnicodeEscapes(summaryRaw.trim())
-        : null
-    const criteria = toCriteria(lookup(parsed, ['criteria', 'checks', 'criterions']))
-    return { overall_score: score, passed, summary, criteria }
+      typeof summaryRaw === 'string' && summaryRaw.trim() ? decodeUnicodeEscapes(summaryRaw.trim()) : null
+    const criteria = toCriteriaItems(lookup(parsed, ['criteria', 'checks', 'criteria_results', 'criteria_list']))
+    return { overall_score: overall, passed, summary, criteria }
   } catch {
     return { overall_score: null, passed: null, summary: null, criteria: [] }
   }
 }
 
-// ── Enhanced-article marker preprocessing ─────────────────────────────────
-// The writer wraps pipeline-added text in [+ADDED]…[/ADDED] markers. These
-// helpers convert them to inline <mark> highlights (progressively while
-// streaming) and strip them entirely for the clipboard / word count. Literal
-// <br> tags are converted to markdown hard breaks EXCEPT inside table rows,
-// where rehype-raw renders them as in-cell line breaks.
-
-const ADDED_OPEN = '[+ADDED]'
-const ADDED_CLOSE = '[/ADDED]'
-
-function countOccurrences(text: string, token: string): number {
-  let count = 0
-  let idx = text.indexOf(token)
-  while (idx !== -1) {
-    count++
-    idx = text.indexOf(token, idx + token.length)
-  }
-  return count
-}
-
-/** Removes a partially streamed marker token dangling at the end of the text. */
-function stripTrailingPartialMarker(text: string): string {
-  for (const token of [ADDED_OPEN, ADDED_CLOSE]) {
-    for (let len = token.length - 1; len >= 2; len--) {
-      if (text.endsWith(token.slice(0, len))) {
-        return text.slice(0, text.length - len)
-      }
-    }
-  }
-  return text
-}
-
-function convertBrOutsideTables(text: string): string {
-  return text
+/**
+ * Shared display preprocessing for enhanced-article markdown:
+ *  - <br> tags OUTSIDE table rows become real markdown line breaks (inside
+ *    table rows they are preserved so rehype-raw renders in-cell breaks)
+ *  - [+ADDED]…[/ADDED] markers become inline <mark> highlights — progressive
+ *    while streaming (an opened-but-unclosed marker still highlights), and a
+ *    partially received trailing marker token is hidden until complete.
+ * The raw marker tokens never reach the renderer.
+ */
+export function preprocessArticleContent(content: string): string {
+  if (!content) return content
+  const lines = content
     .split('\n')
-    .map((line) => (line.trimStart().startsWith('|') ? line : line.replace(/<br\s*\/?>/gi, '  \n')))
-    .join('\n')
+    .map((line) => (line.includes('|') ? line : line.replace(/<br\s*\/?>/gi, '  \n')))
+  let text = lines.join('\n')
+  // Hide a partially streamed marker token at the very end of the text
+  // (e.g. "[+ADD") so it never flashes as literal bracket characters.
+  text = text.replace(/\[(?:\+|\/)?A?D?D?E?D?$/, '')
+  text = text.replace(/\[\+ADDED\]/g, '<mark>').replace(/\[\/ADDED\]/g, '</mark>')
+  const opens = (text.match(/<mark>/g) ?? []).length
+  const closes = (text.match(/<\/mark>/g) ?? []).length
+  for (let i = closes; i < opens; i++) text += '</mark>'
+  return text
 }
 
 /**
- * Single shared preprocessing step for enhanced-article markdown:
- * <br> → real line breaks (outside tables) and [+ADDED]…[/ADDED] → inline
- * <mark> highlights. An unclosed opening marker (mid-stream) is closed at the
- * end so highlighting appears progressively. Raw marker tokens never reach
- * the renderer.
+ * Removes [+ADDED]…[/ADDED] marker tokens from article text and converts <br>
+ * tags to plain line breaks — used for the clipboard copy and word counts so
+ * raw tokens never leak outside the renderer.
  */
-export function preprocessArticleContent(content: string): string {
-  let text = stripTrailingPartialMarker(convertBrOutsideTables(content))
-  const opens = countOccurrences(text, ADDED_OPEN)
-  const closes = countOccurrences(text, ADDED_CLOSE)
-  text = text.split(ADDED_OPEN).join('<mark>').split(ADDED_CLOSE).join('</mark>')
-  if (opens > closes) text += '</mark>'
-  return text
-}
-
-/** Removes ADDED markers entirely — used for clipboard copy and word counts. */
 export function stripArticleMarkers(content: string): string {
-  return stripTrailingPartialMarker(content).split(ADDED_OPEN).join('').split(ADDED_CLOSE).join('')
+  return content
+    .replace(/\[\+ADDED\]/g, '')
+    .replace(/\[\/ADDED\]/g, '')
+    .replace(/<br\s*\/?>/gi, '\n')
 }
