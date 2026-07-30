@@ -1,21 +1,22 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-30T06:43:15.771Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-30T07:29:39.223Z.
 
 ## Overview
 
-Article Enhancer Agent UI with full-screen result tabs (Enhanced Article, Coverage Verification, Gap Analysis, Recommendations with Citation Opportunities and FAQ Suggestions sections), streaming enhancement pipeline, and history view.
+Article Enhancer Agent UI: paste an article URL, pick a content type, and watch the AI agent stream an enhanced draft, gap analysis, recommendations (citation opportunities, FAQ suggestions, and prioritized recommendations), and coverage verification inline on the same page.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 44
 
 ## Features
 
-- Full-screen result tabs for every section with a single Back action (no collapsible layout)
-- Recommendations tab renders Citation Opportunities and FAQ Suggestions as dedicated sections
-- Live streaming enhancement pipeline with progress checklist and status chip
-- History view mirroring the same tabbed result format
-- Print/PDF export reusing the exact on-screen components
+- Inline streaming results on the same page — no full-screen takeover and no View Results CTA
+- Recommendations tab renders three labeled sections: Citation Opportunities, FAQ Suggestions, and Recommendations with structured fields
+- Tabbed results: Enhanced Article, Coverage Verification, Gap Analysis, Recommendations
+- Pipeline progress checklist with live status chip and elapsed timer
+- History view with the same tabbed result format
+- Print/PDF export mirror of the on-screen results
 
 ## Tech Stack
 
@@ -151,28 +152,14 @@ Article Enhancer Agent UI with full-screen result tabs (Enhanced Article, Covera
 
 ## Latest Change
 
-- **Updated at:** 2026-07-30T06:43:15.771Z
-- **Request:** Make the following changes only. Do not change any other styling, colors, spacing, copy, or layout beyond what's explicitly listed below.
+- **Updated at:** 2026-07-30T07:29:39.223Z
+- **Request:** Here are the issues i found:
+1. On click of enhance article CTA: The page is going to FULLSCREEN (Ideally it should not)
+2. We should show the results on the same page rater than showing VIEW RESULTS CTA
+3. Inside Recommendation tab: we need to show 3 sections with its values:
+ a. citation_opportunities (claim or stats, placement, Source_name, source_url)
+ b. faq_suggestions (questions, suggested answers, why it matters)
+ c. recommendations (placement, priority, rationale, recommendation)
 
 
-
-In the view option or after running enhance article CTA,
- As the Enhanced Article tab is full screen, make all the tabs full screen ... 
-
-Don't give the Collapsible option. 
-Just give back option ... 
-|
-
-FOr the post request 
-
-curl -X POST \
-  -H "X-API-Key: $SIM_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"article_url":"example","article_text":"example","content_type":"example","email":"example","stream":true,"selectedOutputs":["enhancedarticlewriter.content","coverageverifier.citations_count","coverageverifier.citations_found","coverageverifier.criteria","coverageverifier.faq_added","coverageverifier.faq_questions_added","coverageverifier.overall_score","coverageverifier.passed","coverageverifier.summary","recommendations.citation_opportunities","recommendations.faq_suggestions","recommendations.recommendations","gapanalysis.competitor_strengths","gapanalysis.coverage_gaps","gapanalysis.underdeveloped_sections"]}' \
-  https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute
-
-
-recommendations.citation_opportunities
-recommendations.faq_suggestions
-
-these should come as a section in the recommendations tab.
+Keep rest everything as is

@@ -1,10 +1,14 @@
+import type { ReactNode } from 'react'
 import type { RecommendationItem, RecommendationsData, SectionStatus } from '@/lib/types'
 import { SectionHeader } from '@/components/SectionHeader'
 
 // normalizeRecommendations tags items sourced from the workflow's
 // recommendations.citation_opportunities and recommendations.faq_suggestions
-// outputs with these exact categories — the card partitions on them so each
-// group renders as its own titled section inside the Recommendations tab.
+// outputs with these exact categories — the card partitions on them so the
+// Recommendations tab always renders THREE titled sections:
+//  1. Citation Opportunities — claim/stats, placement, source name, source URL
+//  2. FAQ Suggestions — question, suggested answer, why it matters
+//  3. Recommendations — recommendation, placement, priority, rationale
 const CITATION_CATEGORY = 'Citation Opportunity'
 const FAQ_CATEGORY = 'FAQ Suggestion'
 
@@ -33,52 +37,129 @@ function SubHeading({ title, count }: { title: string; count: number }) {
   )
 }
 
-function RecItemList({
-  items,
-  suppressCategory,
-}: {
-  items: RecommendationItem[]
-  suppressCategory?: string
-}) {
+function FieldRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+      <span className="w-36 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 text-sm leading-relaxed text-ink-soft">{children}</span>
+    </div>
+  )
+}
+
+function ItemShell({ index, children }: { index: number; children: ReactNode }) {
+  return (
+    <li className="rounded-xl border border-slate-100 p-4 transition hover:border-indigo-100 hover:bg-indigo-50/30">
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden="true"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 font-display text-xs font-semibold text-accent"
+        >
+          {index + 1}
+        </span>
+        <div className="min-w-0 flex-1 space-y-2">{children}</div>
+      </div>
+    </li>
+  )
+}
+
+// ── Section 1: Citation Opportunities ─────────────────────────────────────
+function CitationItemList({ items }: { items: RecommendationItem[] }) {
   return (
     <ol className="space-y-3">
-      {items.map((item, index) => (
-        <li
-          key={index}
-          className="rounded-xl border border-slate-100 p-4 transition hover:border-indigo-100 hover:bg-indigo-50/30"
-        >
-          <div className="flex items-start gap-3">
-            <span
-              aria-hidden="true"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-50 font-display text-xs font-semibold text-accent"
-            >
-              {index + 1}
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-ink">{item.title}</h3>
-                {item.priority ? (
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${priorityClasses(item.priority)}`}
-                  >
-                    {item.priority}
-                  </span>
-                ) : null}
-                {item.category && item.category !== suppressCategory ? (
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-deep">
-                    {item.category}
-                  </span>
-                ) : null}
-              </div>
-              {item.detail ? (
-                <p className="mt-1 text-sm leading-relaxed text-ink-soft">{item.detail}</p>
+      {items.map((item, index) => {
+        const claim = item.claim || item.title
+        const showFallbackDetail =
+          !item.placement && !item.sourceName && !item.sourceUrl && item.detail && item.detail !== claim
+        return (
+          <ItemShell key={index} index={index}>
+            <h3 className="text-sm font-semibold text-ink">{claim}</h3>
+            <div className="space-y-1.5">
+              {item.placement ? <FieldRow label="Placement">{item.placement}</FieldRow> : null}
+              {item.sourceName ? <FieldRow label="Source name">{item.sourceName}</FieldRow> : null}
+              {item.sourceUrl ? (
+                <FieldRow label="Source URL">
+                  {/^https?:\/\//i.test(item.sourceUrl) ? (
+                    <a
+                      href={item.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="break-all font-medium text-accent underline decoration-indigo-200 underline-offset-2 transition hover:text-accent-deep hover:decoration-indigo-400"
+                    >
+                      {item.sourceUrl}
+                    </a>
+                  ) : (
+                    <span className="break-all">{item.sourceUrl}</span>
+                  )}
+                </FieldRow>
+              ) : null}
+              {showFallbackDetail ? (
+                <p className="text-sm leading-relaxed text-ink-soft">{item.detail}</p>
               ) : null}
             </div>
-          </div>
-        </li>
-      ))}
+          </ItemShell>
+        )
+      })}
     </ol>
   )
+}
+
+// ── Section 2: FAQ Suggestions ─────────────────────────────────────────────
+function FaqItemList({ items }: { items: RecommendationItem[] }) {
+  return (
+    <ol className="space-y-3">
+      {items.map((item, index) => {
+        const question = item.question || item.title
+        const answer = item.answer || (item.detail !== question ? item.detail : '')
+        return (
+          <ItemShell key={index} index={index}>
+            <h3 className="text-sm font-semibold text-ink">{question}</h3>
+            <div className="space-y-1.5">
+              {answer ? <FieldRow label="Suggested answer">{answer}</FieldRow> : null}
+              {item.whyItMatters ? <FieldRow label="Why it matters">{item.whyItMatters}</FieldRow> : null}
+            </div>
+          </ItemShell>
+        )
+      })}
+    </ol>
+  )
+}
+
+// ── Section 3: Recommendations ─────────────────────────────────────────────
+function RecommendationItemList({ items }: { items: RecommendationItem[] }) {
+  return (
+    <ol className="space-y-3">
+      {items.map((item, index) => {
+        const main = item.recommendation || item.title
+        return (
+          <ItemShell key={index} index={index}>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-ink">{main}</h3>
+              {item.priority ? (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${priorityClasses(item.priority)}`}
+                >
+                  {item.priority}
+                </span>
+              ) : null}
+            </div>
+            <div className="space-y-1.5">
+              {item.placement ? <FieldRow label="Placement">{item.placement}</FieldRow> : null}
+              {item.rationale ? <FieldRow label="Rationale">{item.rationale}</FieldRow> : null}
+              {!item.rationale && item.detail && item.detail !== main ? (
+                <FieldRow label="Detail">{item.detail}</FieldRow>
+              ) : null}
+            </div>
+          </ItemShell>
+        )
+      })}
+    </ol>
+  )
+}
+
+function EmptySectionNote({ done }: { done: boolean }) {
+  return <p className="text-sm italic text-slate-400">{done ? 'No data' : 'Waiting for data…'}</p>
 }
 
 export function RecommendationsCard({ data, status, embedded = false }: RecommendationsCardProps) {
@@ -91,7 +172,6 @@ export function RecommendationsCard({ data, status, embedded = false }: Recommen
   const mainItems = items.filter(
     (item) => item.category !== CITATION_CATEGORY && item.category !== FAQ_CATEGORY,
   )
-  const hasSections = citationItems.length > 0 || faqItems.length > 0
 
   return (
     <section
@@ -111,29 +191,29 @@ export function RecommendationsCard({ data, status, embedded = false }: Recommen
         </div>
       ) : items.length === 0 ? (
         <p className="text-sm italic text-slate-400">{done ? 'No data' : 'Waiting for data…'}</p>
-      ) : hasSections ? (
-        <div className="space-y-6">
-          {mainItems.length > 0 && (
-            <div>
-              <SubHeading title="Recommendations" count={mainItems.length} />
-              <RecItemList items={mainItems} />
-            </div>
-          )}
-          {citationItems.length > 0 && (
-            <div>
-              <SubHeading title="Citation Opportunities" count={citationItems.length} />
-              <RecItemList items={citationItems} suppressCategory={CITATION_CATEGORY} />
-            </div>
-          )}
-          {faqItems.length > 0 && (
-            <div>
-              <SubHeading title="FAQ Suggestions" count={faqItems.length} />
-              <RecItemList items={faqItems} suppressCategory={FAQ_CATEGORY} />
-            </div>
-          )}
-        </div>
       ) : (
-        <RecItemList items={items} />
+        <div className="space-y-6">
+          <div>
+            <SubHeading title="Citation Opportunities" count={citationItems.length} />
+            {citationItems.length === 0 ? (
+              <EmptySectionNote done={done} />
+            ) : (
+              <CitationItemList items={citationItems} />
+            )}
+          </div>
+          <div>
+            <SubHeading title="FAQ Suggestions" count={faqItems.length} />
+            {faqItems.length === 0 ? <EmptySectionNote done={done} /> : <FaqItemList items={faqItems} />}
+          </div>
+          <div>
+            <SubHeading title="Recommendations" count={mainItems.length} />
+            {mainItems.length === 0 ? (
+              <EmptySectionNote done={done} />
+            ) : (
+              <RecommendationItemList items={mainItems} />
+            )}
+          </div>
+        </div>
       )}
     </section>
   )

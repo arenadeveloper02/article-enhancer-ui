@@ -1,5 +1,4 @@
 import type {
-  ArticleSegment,
   CoverageData,
   CriteriaItem,
   GapAnalysisData,
@@ -263,10 +262,13 @@ const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 }
 
 /**
  * Maps an arbitrary list-ish payload to RecommendationItem[]. Shared by the
- * primary recommendations list and the additional citation_opportunities /
- * faq_suggestions outputs — extra keys map object fields tolerantly
- * (question/answer for FAQs, source/url/reason for citations) onto the same
- * title + detail card shape, so no new UI pattern is needed.
+ * primary recommendations list and the citation_opportunities /
+ * faq_suggestions outputs. Alongside the tolerant title/detail fallbacks it
+ * captures the STRUCTURED per-section fields the Recommendations tab renders:
+ *  - citations: claim_or_stats → claim, placement, source_name → sourceName,
+ *    source_url → sourceUrl
+ *  - FAQs: question, suggested_answer → answer, why_it_matters → whyItMatters
+ *  - recommendations: recommendation, placement, priority, rationale
  */
 function toRecommendationItems(rawList: unknown, defaultCategory: string | null): RecommendationItem[] {
   let list = rawList
@@ -283,24 +285,45 @@ function toRecommendationItems(rawList: unknown, defaultCategory: string | null)
       continue
     }
     if (!isRecord(entry)) continue
+    // Structured fields for the three Recommendations sections.
+    const placement = firstString(entry, ['placement', 'where', 'location', 'section'])
+    const rationale = firstString(entry, ['rationale', 'reason', 'justification', 'why'])
+    const recommendation = firstString(entry, ['recommendation', 'suggestion', 'action', 'advice'])
+    const claim = firstString(entry, ['claim_or_stats', 'claim_or_stat', 'claim', 'stat', 'stats', 'statistic', 'data_point'])
+    const sourceName = firstString(entry, ['source_name', 'sourcename', 'source', 'publisher', 'publication'])
+    const sourceUrl = firstString(entry, ['source_url', 'sourceurl', 'url', 'link', 'href'])
+    const question = firstString(entry, ['question', 'faq_question', 'faq'])
+    const answer = firstString(entry, ['suggested_answer', 'suggestedanswer', 'answer', 'proposed_answer'])
+    const whyItMatters = firstString(entry, ['why_it_matters', 'why_this_matters', 'whyitmatters', 'impact'])
+
     let title = firstString(entry, ['title', 'headline', 'name', 'question', 'source', 'topic', 'citation', 'opportunity'])
     let detail = firstString(entry, ['detail', 'details', 'description', 'text', 'body', 'recommendation', 'rationale', 'answer', 'suggestion', 'reason', 'why_it_matters', 'url', 'link'])
     if (!title) {
-      if (!detail) continue
-      if (detail.length > 60) {
-        title = `${detail.slice(0, 60).trim()}…`
+      const fallback = recommendation || claim || question || detail
+      if (!fallback) continue
+      if (fallback.length > 60) {
+        title = `${fallback.slice(0, 60).trim()}…`
       } else {
-        title = detail
-        detail = ''
+        title = fallback
+        if (fallback === detail) detail = ''
       }
     }
     const rawPriority = firstString(entry, ['priority', 'importance', 'severity']).toLowerCase()
-    const category = firstString(entry, ['category', 'type', 'area', 'placement']) || (defaultCategory ?? '')
+    const category = firstString(entry, ['category', 'type', 'area']) || (defaultCategory ?? '')
     items.push({
       title: decodeUnicodeEscapes(title),
       detail: decodeUnicodeEscapes(detail),
       priority: rawPriority ? rawPriority : null,
       category: category ? decodeUnicodeEscapes(category) : null,
+      placement: placement ? decodeUnicodeEscapes(placement) : null,
+      rationale: rationale ? decodeUnicodeEscapes(rationale) : null,
+      recommendation: recommendation ? decodeUnicodeEscapes(recommendation) : null,
+      claim: claim ? decodeUnicodeEscapes(claim) : null,
+      sourceName: sourceName ? decodeUnicodeEscapes(sourceName) : null,
+      sourceUrl: sourceUrl ? decodeUnicodeEscapes(sourceUrl) : null,
+      question: question ? decodeUnicodeEscapes(question) : null,
+      answer: answer ? decodeUnicodeEscapes(answer) : null,
+      whyItMatters: whyItMatters ? decodeUnicodeEscapes(whyItMatters) : null,
     })
   }
   return items
@@ -324,8 +347,9 @@ export function normalizeRecommendations(raw: unknown): RecommendationsData {
 
     // Additional recommendation outputs from the workflow:
     // recommendations.citation_opportunities and recommendations.faq_suggestions.
-    // They render as extra entries in the same list/card style; missing or
-    // empty keys contribute nothing (same behavior as other empty types).
+    // They are tagged with fixed categories so the Recommendations tab can
+    // partition them into their own titled sections; missing or empty keys
+    // contribute nothing (same behavior as other empty types).
     const containers: unknown[] = [parsed]
     if (isRecord(parsed)) {
       const found = lookup(parsed, ['recommendations'])
@@ -371,155 +395,127 @@ export function normalizeRecommendations(raw: unknown): RecommendationsData {
   }
 }
 
-function clampScore(value: unknown): number | null {
-  let num: number | null = null
-  if (typeof value === 'number') {
-    num = value
-  } else if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value.replace(/[^\d.+-]/g, ''))
-    if (Number.isFinite(parsed)) num = parsed
-  }
-  if (num === null || !Number.isFinite(num)) return null
-  if (num < 0) return 0
-  if (num > 100) return 100
-  return num
-}
-
-function toBoolean(value: unknown): boolean | null {
+function toBooleanish(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
   if (typeof value === 'string') {
     const lower = value.trim().toLowerCase()
-    if (['true', 'yes', 'pass', 'passed'].includes(lower)) return true
-    if (['false', 'no', 'fail', 'failed'].includes(lower)) return false
+    if (lower === 'true' || lower === 'pass' || lower === 'passed' || lower === 'yes') return true
+    if (lower === 'false' || lower === 'fail' || lower === 'failed' || lower === 'no') return false
   }
   return null
+}
+
+function toNumberish(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim())
+    if (value.trim() && Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function toCriteria(value: unknown): CriteriaItem[] {
+  let list = value
+  if (typeof list === 'string') {
+    const parsed = extractBalancedJson(list)
+    list = Array.isArray(parsed) || isRecord(parsed) ? parsed : []
+  }
+  const arr: unknown[] = Array.isArray(list) ? list : isRecord(list) ? [list] : []
+  const items: CriteriaItem[] = []
+  for (const entry of arr) {
+    if (typeof entry === 'string') {
+      const text = decodeUnicodeEscapes(entry.trim())
+      if (text) items.push({ name: text, passed: null, score: null, notes: null })
+      continue
+    }
+    if (!isRecord(entry)) continue
+    const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'label', 'check'])
+    if (!name) continue
+    const notes = firstString(entry, ['notes', 'justification', 'reason', 'detail', 'details', 'explanation', 'comment'])
+    items.push({
+      name: decodeUnicodeEscapes(name),
+      passed: toBooleanish(pick(entry, ['passed', 'pass', 'met', 'status'])),
+      score: toNumberish(pick(entry, ['score', 'value', 'points', 'rating'])),
+      notes: notes ? decodeUnicodeEscapes(notes) : null,
+    })
+  }
+  return items
 }
 
 export function normalizeCoverage(raw: unknown): CoverageData {
   try {
     const parsed = parseMaybe(raw)
-    if (!isRecord(parsed)) {
-      return { overall_score: null, passed: null, summary: null, criteria: [] }
-    }
-    const overall_score = clampScore(lookup(parsed, ['overall_score', 'overallscore', 'score']))
-    const passed = toBoolean(lookup(parsed, ['passed', 'pass']))
-    const rawSummary = lookup(parsed, ['summary', 'verdict'])
+    const score = toNumberish(lookup(parsed, ['overall_score', 'overallscore', 'score']))
+    const passed = toBooleanish(lookup(parsed, ['passed', 'pass']))
+    const summaryRaw = lookup(parsed, ['summary', 'overview', 'assessment'])
     const summary =
-      typeof rawSummary === 'string' && rawSummary.trim()
-        ? decodeUnicodeEscapes(rawSummary.trim())
+      typeof summaryRaw === 'string' && summaryRaw.trim()
+        ? decodeUnicodeEscapes(summaryRaw.trim())
         : null
-    const rawCriteria = lookup(parsed, ['criteria', 'checks', 'criteria_results'])
-    const criteriaSource =
-      typeof rawCriteria === 'string' ? extractBalancedJson(rawCriteria) : rawCriteria
-    const criteriaArr: unknown[] = Array.isArray(criteriaSource) ? criteriaSource : []
-    const criteria: CriteriaItem[] = []
-    for (const entry of criteriaArr) {
-      if (typeof entry === 'string') {
-        const text = decodeUnicodeEscapes(entry.trim())
-        if (text) criteria.push({ name: text, passed: null, score: null, notes: null })
-        continue
-      }
-      if (!isRecord(entry)) continue
-      const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'check', 'label'])
-      if (!name) continue
-      const notes = firstString(entry, ['notes', 'justification', 'reason', 'explanation', 'detail', 'details', 'comment'])
-      criteria.push({
-        name: decodeUnicodeEscapes(name),
-        passed: toBoolean(pick(entry, ['passed', 'pass', 'met', 'ok'])),
-        score: clampScore(pick(entry, ['score', 'value', 'rating'])),
-        notes: notes ? decodeUnicodeEscapes(notes) : null,
-      })
-    }
-    return { overall_score, passed, summary, criteria }
+    const criteria = toCriteria(lookup(parsed, ['criteria', 'checks', 'criterions']))
+    return { overall_score: score, passed, summary, criteria }
   } catch {
     return { overall_score: null, passed: null, summary: null, criteria: [] }
   }
 }
 
+// ── Enhanced-article marker preprocessing ─────────────────────────────────
+// The writer wraps pipeline-added text in [+ADDED]…[/ADDED] markers. These
+// helpers convert them to inline <mark> highlights (progressively while
+// streaming) and strip them entirely for the clipboard / word count. Literal
+// <br> tags are converted to markdown hard breaks EXCEPT inside table rows,
+// where rehype-raw renders them as in-cell line breaks.
+
 const ADDED_OPEN = '[+ADDED]'
 const ADDED_CLOSE = '[/ADDED]'
 
-/**
- * Splits enhanced-article text on [+ADDED]…[/ADDED] markers into segments.
- * An unclosed opening marker (mid-stream) highlights the remaining tail so
- * highlighting is progressive while streaming.
- */
-export function splitArticleSegments(content: string): ArticleSegment[] {
-  const segments: ArticleSegment[] = []
-  let cursor = 0
-  while (cursor < content.length) {
-    const openIdx = content.indexOf(ADDED_OPEN, cursor)
-    if (openIdx === -1) {
-      segments.push({ text: content.slice(cursor), added: false })
-      break
-    }
-    if (openIdx > cursor) {
-      segments.push({ text: content.slice(cursor, openIdx), added: false })
-    }
-    const closeIdx = content.indexOf(ADDED_CLOSE, openIdx + ADDED_OPEN.length)
-    if (closeIdx === -1) {
-      segments.push({ text: content.slice(openIdx + ADDED_OPEN.length), added: true })
-      break
-    }
-    segments.push({ text: content.slice(openIdx + ADDED_OPEN.length, closeIdx), added: true })
-    cursor = closeIdx + ADDED_CLOSE.length
+function countOccurrences(text: string, token: string): number {
+  let count = 0
+  let idx = text.indexOf(token)
+  while (idx !== -1) {
+    count++
+    idx = text.indexOf(token, idx + token.length)
   }
-  return segments.filter((segment) => segment.text.length > 0)
+  return count
 }
 
-/** Removes a trailing partially-streamed marker token so raw fragments never render. */
+/** Removes a partially streamed marker token dangling at the end of the text. */
 function stripTrailingPartialMarker(text: string): string {
   for (const token of [ADDED_OPEN, ADDED_CLOSE]) {
-    for (let len = token.length - 1; len > 0; len--) {
-      if (text.endsWith(token.slice(0, len))) return text.slice(0, text.length - len)
+    for (let len = token.length - 1; len >= 2; len--) {
+      if (text.endsWith(token.slice(0, len))) {
+        return text.slice(0, text.length - len)
+      }
     }
   }
   return text
 }
 
-/**
- * Converts literal <br> tags to real line breaks OUTSIDE table rows. <br>
- * tags inside markdown pipe-table cells are preserved so rehype-raw can
- * render them as in-cell line breaks without breaking the table structure.
- */
-function convertBreaks(text: string): string {
+function convertBrOutsideTables(text: string): string {
   return text
     .split('\n')
-    .map((line) => {
-      const isTableRow = line.trimStart().startsWith('|')
-      return isTableRow ? line : line.replace(/<br\s*\/?>/gi, '\n')
-    })
+    .map((line) => (line.trimStart().startsWith('|') ? line : line.replace(/<br\s*\/?>/gi, '  \n')))
     .join('\n')
 }
 
 /**
  * Single shared preprocessing step for enhanced-article markdown:
- * <br> → real line breaks (outside table cells) and [+ADDED]…[/ADDED] →
- * inline <mark> highlights (progressive while streaming). Raw marker tokens
- * never reach the renderer.
+ * <br> → real line breaks (outside tables) and [+ADDED]…[/ADDED] → inline
+ * <mark> highlights. An unclosed opening marker (mid-stream) is closed at the
+ * end so highlighting appears progressively. Raw marker tokens never reach
+ * the renderer.
  */
 export function preprocessArticleContent(content: string): string {
-  const safe = stripTrailingPartialMarker(content)
-  const segments = splitArticleSegments(safe)
-  const rebuilt = segments
-    .map((segment) => {
-      if (!segment.added) return segment.text
-      // Wrap each non-empty line separately so <mark> stays inline-safe
-      // across multi-line added blocks.
-      return segment.text
-        .split('\n')
-        .map((line) => (line.trim() ? `<mark>${line}</mark>` : line))
-        .join('\n')
-    })
-    .join('')
-  return convertBreaks(rebuilt)
+  let text = stripTrailingPartialMarker(convertBrOutsideTables(content))
+  const opens = countOccurrences(text, ADDED_OPEN)
+  const closes = countOccurrences(text, ADDED_CLOSE)
+  text = text.split(ADDED_OPEN).join('<mark>').split(ADDED_CLOSE).join('</mark>')
+  if (opens > closes) text += '</mark>'
+  return text
 }
 
-/**
- * Strips [+ADDED]/[/ADDED] marker tokens (and converts <br> outside tables)
- * for clean clipboard text and word counting — no highlight markup included.
- */
+/** Removes ADDED markers entirely — used for clipboard copy and word counts. */
 export function stripArticleMarkers(content: string): string {
-  const withoutMarkers = content.split(ADDED_OPEN).join('').split(ADDED_CLOSE).join('')
-  return convertBreaks(stripTrailingPartialMarker(withoutMarkers))
+  return stripTrailingPartialMarker(content).split(ADDED_OPEN).join('').split(ADDED_CLOSE).join('')
 }

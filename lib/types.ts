@@ -36,11 +36,27 @@ export interface GapAnalysisData {
 }
 
 // Recommendations (blockId 5ae6657d)
+// The optional structured fields power the three labeled sections of the
+// Recommendations tab:
+//  - Citation Opportunities: claim (claim_or_stats), placement, sourceName, sourceUrl
+//  - FAQ Suggestions: question, answer (suggested_answer), whyItMatters
+//  - Recommendations: recommendation, placement, priority, rationale
+// title/detail remain the tolerant fallbacks when a payload lacks the
+// structured keys, so older/looser stream shapes still render.
 export interface RecommendationItem {
   title: string
   detail: string
   priority?: 'high' | 'medium' | 'low' | string | null
   category?: string | null
+  placement?: string | null
+  rationale?: string | null
+  recommendation?: string | null
+  claim?: string | null
+  sourceName?: string | null
+  sourceUrl?: string | null
+  question?: string | null
+  answer?: string | null
+  whyItMatters?: string | null
 }
 
 export interface RecommendationsData {
