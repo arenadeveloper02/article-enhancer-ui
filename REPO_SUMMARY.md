@@ -155,6 +155,7 @@ Streaming Article Enhancer UI: paste an article URL, pick a content type, and wa
 - **Updated at:** 2026-07-30T12:14:09.863Z
 - **Request:** Make the following changes only. Do not change any other styling, colors, spacing, copy, or layout beyond what's explicitly listed below.
 
+** CRITICAL : Don't delete the column updatedAt in EnhancementLog table.**
 
 Verify the API 
 
