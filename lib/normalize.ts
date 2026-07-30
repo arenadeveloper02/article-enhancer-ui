@@ -261,6 +261,51 @@ export function normalizeGapAnalysis(raw: unknown): GapAnalysisData {
 
 const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 }
 
+/**
+ * Maps an arbitrary list-ish payload to RecommendationItem[]. Shared by the
+ * primary recommendations list and the additional citation_opportunities /
+ * faq_suggestions outputs — extra keys map object fields tolerantly
+ * (question/answer for FAQs, source/url/reason for citations) onto the same
+ * title + detail card shape, so no new UI pattern is needed.
+ */
+function toRecommendationItems(rawList: unknown, defaultCategory: string | null): RecommendationItem[] {
+  let list = rawList
+  if (typeof list === 'string') {
+    const reparsed = extractBalancedJson(list)
+    list = Array.isArray(reparsed) ? reparsed : splitToLines(list)
+  }
+  const arr: unknown[] = Array.isArray(list) ? list : isRecord(list) ? [list] : []
+  const items: RecommendationItem[] = []
+  for (const entry of arr) {
+    if (typeof entry === 'string') {
+      const text = decodeUnicodeEscapes(entry.trim())
+      if (text) items.push({ title: text, detail: '', priority: null, category: defaultCategory })
+      continue
+    }
+    if (!isRecord(entry)) continue
+    let title = firstString(entry, ['title', 'headline', 'name', 'question', 'source', 'topic', 'citation', 'opportunity'])
+    let detail = firstString(entry, ['detail', 'details', 'description', 'text', 'body', 'recommendation', 'rationale', 'answer', 'suggestion', 'reason', 'why_it_matters', 'url', 'link'])
+    if (!title) {
+      if (!detail) continue
+      if (detail.length > 60) {
+        title = `${detail.slice(0, 60).trim()}…`
+      } else {
+        title = detail
+        detail = ''
+      }
+    }
+    const rawPriority = firstString(entry, ['priority', 'importance', 'severity']).toLowerCase()
+    const category = firstString(entry, ['category', 'type', 'area', 'placement']) || (defaultCategory ?? '')
+    items.push({
+      title: decodeUnicodeEscapes(title),
+      detail: decodeUnicodeEscapes(detail),
+      priority: rawPriority ? rawPriority : null,
+      category: category ? decodeUnicodeEscapes(category) : null,
+    })
+  }
+  return items
+}
+
 export function normalizeRecommendations(raw: unknown): RecommendationsData {
   try {
     const parsed = parseMaybe(raw)
@@ -275,44 +320,38 @@ export function normalizeRecommendations(raw: unknown): RecommendationsData {
         }
       }
     }
-    if (typeof list === 'string') {
-      const reparsed = extractBalancedJson(list)
-      list = Array.isArray(reparsed) ? reparsed : splitToLines(list)
+    const items = toRecommendationItems(list, null)
+
+    // Additional recommendation outputs from the workflow:
+    // recommendations.citation_opportunities and recommendations.faq_suggestions.
+    // They render as extra entries in the same list/card style; missing or
+    // empty keys contribute nothing (same behavior as other empty types).
+    const containers: unknown[] = [parsed]
+    if (isRecord(parsed)) {
+      const found = lookup(parsed, ['recommendations'])
+      if (isRecord(found)) containers.push(found)
     }
-    const arr: unknown[] = Array.isArray(list) ? list : isRecord(list) ? [list] : []
-    const items: RecommendationItem[] = []
-    for (const entry of arr) {
-      if (typeof entry === 'string') {
-        const text = decodeUnicodeEscapes(entry.trim())
-        if (text) items.push({ title: text, detail: '', priority: null, category: null })
-        continue
+    let citationsRaw: unknown
+    let faqsRaw: unknown
+    for (const container of containers) {
+      if (citationsRaw === undefined) {
+        citationsRaw = lookup(container, ['citation_opportunities', 'citationopportunities', 'citations'])
       }
-      if (!isRecord(entry)) continue
-      let title = firstString(entry, ['title', 'headline', 'name'])
-      let detail = firstString(entry, ['detail', 'details', 'description', 'text', 'body', 'recommendation', 'rationale'])
-      if (!title) {
-        if (!detail) continue
-        if (detail.length > 60) {
-          title = `${detail.slice(0, 60).trim()}…`
-        } else {
-          title = detail
-          detail = ''
-        }
+      if (faqsRaw === undefined) {
+        faqsRaw = lookup(container, ['faq_suggestions', 'faqsuggestions', 'faqs'])
       }
-      const rawPriority = firstString(entry, ['priority', 'importance', 'severity']).toLowerCase()
-      const category = firstString(entry, ['category', 'type', 'area', 'placement'])
-      items.push({
-        title: decodeUnicodeEscapes(title),
-        detail: decodeUnicodeEscapes(detail),
-        priority: rawPriority ? rawPriority : null,
-        category: category ? decodeUnicodeEscapes(category) : null,
-      })
     }
-    const hasKnownPriority = items.some(
+    const combined = [
+      ...items,
+      ...toRecommendationItems(citationsRaw, 'Citation Opportunity'),
+      ...toRecommendationItems(faqsRaw, 'FAQ Suggestion'),
+    ]
+
+    const hasKnownPriority = combined.some(
       (item) => typeof item.priority === 'string' && item.priority in PRIORITY_RANK,
     )
     if (hasKnownPriority) {
-      const ranked = items.map((item, index) => ({ item, index }))
+      const ranked = combined.map((item, index) => ({ item, index }))
       ranked.sort((a, b) => {
         const rankA =
           typeof a.item.priority === 'string' && a.item.priority in PRIORITY_RANK
@@ -326,7 +365,7 @@ export function normalizeRecommendations(raw: unknown): RecommendationsData {
       })
       return { recommendations: ranked.map((r) => r.item) }
     }
-    return { recommendations: items }
+    return { recommendations: combined }
   } catch {
     return { recommendations: [] }
   }
@@ -370,31 +409,24 @@ export function normalizeCoverage(raw: unknown): CoverageData {
         ? decodeUnicodeEscapes(rawSummary.trim())
         : null
     const rawCriteria = lookup(parsed, ['criteria', 'checks', 'criteria_results'])
-    const criteriaArr: unknown[] = Array.isArray(rawCriteria)
-      ? rawCriteria
-      : typeof rawCriteria === 'string'
-        ? ((): unknown[] => {
-            const reparsed = extractBalancedJson(rawCriteria)
-            return Array.isArray(reparsed) ? reparsed : []
-          })()
-        : []
+    const criteriaSource =
+      typeof rawCriteria === 'string' ? extractBalancedJson(rawCriteria) : rawCriteria
+    const criteriaArr: unknown[] = Array.isArray(criteriaSource) ? criteriaSource : []
     const criteria: CriteriaItem[] = []
     for (const entry of criteriaArr) {
       if (typeof entry === 'string') {
-        const name = decodeUnicodeEscapes(entry.trim())
-        if (name) criteria.push({ name, passed: null, score: null, notes: null })
+        const text = decodeUnicodeEscapes(entry.trim())
+        if (text) criteria.push({ name: text, passed: null, score: null, notes: null })
         continue
       }
       if (!isRecord(entry)) continue
-      const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'label', 'check'])
+      const name = firstString(entry, ['name', 'criterion', 'criteria', 'title', 'check', 'label'])
       if (!name) continue
-      const itemPassed = toBoolean(pick(entry, ['passed', 'pass', 'met', 'result']))
-      const score = clampScore(pick(entry, ['score', 'rating']))
       const notes = firstString(entry, ['notes', 'justification', 'reason', 'explanation', 'detail', 'details', 'comment'])
       criteria.push({
         name: decodeUnicodeEscapes(name),
-        passed: itemPassed,
-        score,
+        passed: toBoolean(pick(entry, ['passed', 'pass', 'met', 'ok'])),
+        score: clampScore(pick(entry, ['score', 'value', 'rating'])),
         notes: notes ? decodeUnicodeEscapes(notes) : null,
       })
     }
@@ -404,99 +436,90 @@ export function normalizeCoverage(raw: unknown): CoverageData {
   }
 }
 
-// ── Article text preprocessing ──────────────────────────────────────────
-
-const BR_RE = /<br\s*\/?\s*>/gi
-const TABLE_DELIMITER_RE = /^\|?[\s:|-]+\|?$/
+const ADDED_OPEN = '[+ADDED]'
+const ADDED_CLOSE = '[/ADDED]'
 
 /**
- * Wraps a single line's content in <mark> while keeping markdown block
- * structure valid: list/heading/quote prefixes stay outside the mark, and
- * table rows get per-cell marks so the pipe structure survives.
+ * Splits enhanced-article text on [+ADDED]…[/ADDED] markers into segments.
+ * An unclosed opening marker (mid-stream) highlights the remaining tail so
+ * highlighting is progressive while streaming.
  */
-function markWrapLine(line: string): string {
-  const trimmed = line.trim()
-  if (!trimmed) return line
-  if (trimmed.startsWith('|')) {
-    if (TABLE_DELIMITER_RE.test(trimmed)) return line
-    return line
-      .split('|')
-      .map((cell) => {
-        const cellText = cell.trim()
-        if (!cellText) return cell
-        return cell.replace(cellText, `<mark>${cellText}</mark>`)
-      })
-      .join('|')
+export function splitArticleSegments(content: string): ArticleSegment[] {
+  const segments: ArticleSegment[] = []
+  let cursor = 0
+  while (cursor < content.length) {
+    const openIdx = content.indexOf(ADDED_OPEN, cursor)
+    if (openIdx === -1) {
+      segments.push({ text: content.slice(cursor), added: false })
+      break
+    }
+    if (openIdx > cursor) {
+      segments.push({ text: content.slice(cursor, openIdx), added: false })
+    }
+    const closeIdx = content.indexOf(ADDED_CLOSE, openIdx + ADDED_OPEN.length)
+    if (closeIdx === -1) {
+      segments.push({ text: content.slice(openIdx + ADDED_OPEN.length), added: true })
+      break
+    }
+    segments.push({ text: content.slice(openIdx + ADDED_OPEN.length, closeIdx), added: true })
+    cursor = closeIdx + ADDED_CLOSE.length
   }
-  const match = line.match(/^(\s*(?:[-*+]\s+|\d+[.)]\s+|#{1,6}\s+|>\s+)?)([\s\S]*)$/)
-  if (match && match[2].trim()) return `${match[1]}<mark>${match[2]}</mark>`
-  return line
+  return segments.filter((segment) => segment.text.length > 0)
 }
 
-function markWrap(inner: string): string {
-  return inner
-    .split('\n')
-    .map((line) => markWrapLine(line))
-    .join('\n')
-}
-
-/**
- * Shared preprocessing for enhanced-article markdown before rendering:
- * - <br> tags become real line breaks EXCEPT inside markdown table rows,
- *   where they stay inline (rehype-raw renders them) so the row structure
- *   and in-cell line breaks are preserved.
- * - A blank line is inserted before table blocks so remark-gfm reliably
- *   parses pipe tables into real HTML tables.
- * - [+ADDED]…[/ADDED] markers become inline <mark> highlights, applied
- *   progressively while streaming (an unclosed trailing marker still
- *   highlights). The raw marker tokens never reach the renderer.
- */
-export function preprocessArticleContent(content: string): string {
-  let text = decodeUnicodeEscapes(content)
-  text = text
-    .split('\n')
-    .map((line) => (line.trimStart().startsWith('|') ? line : line.replace(BR_RE, '\n')))
-    .join('\n')
-  const lines = text.split('\n')
-  const out: string[] = []
-  for (const line of lines) {
-    const isTableRow = line.trimStart().startsWith('|')
-    const prev = out.length > 0 ? out[out.length - 1] : ''
-    if (isTableRow && prev.trim() !== '' && !prev.trimStart().startsWith('|')) out.push('')
-    out.push(line)
+/** Removes a trailing partially-streamed marker token so raw fragments never render. */
+function stripTrailingPartialMarker(text: string): string {
+  for (const token of [ADDED_OPEN, ADDED_CLOSE]) {
+    for (let len = token.length - 1; len > 0; len--) {
+      if (text.endsWith(token.slice(0, len))) return text.slice(0, text.length - len)
+    }
   }
-  text = out.join('\n')
-  text = text.replace(/\[\+ADDED\]([\s\S]*?)\[\/ADDED\]/g, (_m: string, inner: string) => markWrap(inner))
-  text = text.replace(/\[\+ADDED\]([\s\S]*)$/, (_m: string, inner: string) => markWrap(inner))
-  text = text.replace(/\[\/ADDED\]/g, '')
   return text
 }
 
 /**
- * Removes [+ADDED]/[/ADDED] markers and converts <br> tags to line breaks —
- * used for clipboard copies and word counts (plain text, no highlights).
+ * Converts literal <br> tags to real line breaks OUTSIDE table rows. <br>
+ * tags inside markdown pipe-table cells are preserved so rehype-raw can
+ * render them as in-cell line breaks without breaking the table structure.
  */
-export function stripArticleMarkers(content: string): string {
-  return decodeUnicodeEscapes(content)
-    .replace(/\[\+ADDED\]/g, '')
-    .replace(/\[\/ADDED\]/g, '')
-    .replace(BR_RE, '\n')
+function convertBreaks(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      const isTableRow = line.trimStart().startsWith('|')
+      return isTableRow ? line : line.replace(/<br\s*\/?>/gi, '\n')
+    })
+    .join('\n')
 }
 
 /**
- * Splits article text into plain/added segments on [+ADDED]…[/ADDED] markers.
+ * Single shared preprocessing step for enhanced-article markdown:
+ * <br> → real line breaks (outside table cells) and [+ADDED]…[/ADDED] →
+ * inline <mark> highlights (progressive while streaming). Raw marker tokens
+ * never reach the renderer.
  */
-export function splitArticleSegments(content: string): ArticleSegment[] {
-  const segments: ArticleSegment[] = []
-  const re = /\[\+ADDED\]([\s\S]*?)(?:\[\/ADDED\]|$)/g
-  let lastIndex = 0
-  let match = re.exec(content)
-  while (match !== null) {
-    if (match.index > lastIndex) segments.push({ text: content.slice(lastIndex, match.index), added: false })
-    segments.push({ text: match[1], added: true })
-    lastIndex = re.lastIndex
-    match = re.exec(content)
-  }
-  if (lastIndex < content.length) segments.push({ text: content.slice(lastIndex), added: false })
-  return segments
+export function preprocessArticleContent(content: string): string {
+  const safe = stripTrailingPartialMarker(content)
+  const segments = splitArticleSegments(safe)
+  const rebuilt = segments
+    .map((segment) => {
+      if (!segment.added) return segment.text
+      // Wrap each non-empty line separately so <mark> stays inline-safe
+      // across multi-line added blocks.
+      return segment.text
+        .split('\n')
+        .map((line) => (line.trim() ? `<mark>${line}</mark>` : line))
+        .join('\n')
+    })
+    .join('')
+  return convertBreaks(rebuilt)
+}
+
+/**
+ * Strips [+ADDED]/[/ADDED] marker tokens (and converts <br> outside tables)
+ * for clean clipboard text and word counting — no highlight markup included.
+ */
+export function stripArticleMarkers(content: string): string {
+  const withoutMarkers = content.split(ADDED_OPEN).join('').split(ADDED_CLOSE).join('')
+  return convertBreaks(stripTrailingPartialMarker(withoutMarkers))
 }

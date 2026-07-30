@@ -1,22 +1,21 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-30T05:33:28.491Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-30T06:03:27.137Z.
 
 ## Overview
 
-Article Enhancer Agent UI — widened Generator/History containers, real createdAt timestamps in History, full-screen History view with explicit Back and Export, and proper HTML table rendering for markdown tables.
+Streamed AI article enhancement UI with gap analysis, recommendations (including citation opportunities and FAQ suggestions), coverage verification, and persisted run history timestamps.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 44
 
 ## Features
 
-- Streaming article enhancement with live progress checklist
-- Widened centered containers for Generator form and History list
-- History runs show real createdAt date/time in readable local format
-- History View always opens full-screen with explicit Back button
-- Export (print) available in both Generator and History full-screen views
-- Markdown tables rendered as real HTML tables with thead/tbody, preserving inline formatting and <br> in cells
+- Streaming article enhancement with live panel updates
+- Gap analysis, recommendations, and coverage verification tabs
+- Citation opportunities and FAQ suggestions surfaced as recommendation entries
+- History view with persisted createdAt timestamps formatted as local date/time
+- PDF/print export mirroring the on-screen UI
 
 ## Tech Stack
 
@@ -152,33 +151,29 @@ Article Enhancer Agent UI — widened Generator/History containers, real created
 
 ## Latest Change
 
-- **Updated at:** 2026-07-30T05:33:28.491Z
-- **Request:** Make the following changes only. Do not change any other styling, colors, spacing, copy, or layout beyond what's explicitly listed below.
+- **Updated at:** 2026-07-30T06:03:27.137Z
+- **Request:** Make the following backend/frontend changes only. Do not change any other logic, styling, or response fields beyond what's listed below.
 
-1. Widen the containers
+1. Add createdAt to the history response
 
-Increase the max-width of the main form container (Generator tab: Article URL, Article text, Content type, Enhance article button) — keep it centered, just wider.
-Increase the max-width of the History tab container (the "PREVIOUS RUNS" list/cards) to match the same new width as the Generator form.
+The endpoint GET /api/history (called from https://article-enhancer-ui.vercel.app/api/history) currently does not return a createdAt field per run, which is why the UI falls back to showing "Unknown time".
+When a workflow run is triggered via https://agent.thearena.ai/api/workflows/38458816-0871-4c2f-8545-39654a5530cc/execute, that execution response already includes a createdAt timestamp. Persist this createdAt value when the run is saved/logged (e.g., in the DB record or cache entry for that run), and include it in the /api/history response payload for each item, e.g.:
+json
+{
+  "url": "https://www.gentledental.com/resources/articles/tooth-sensitivity",
+  "type": "Landing Page",
+  "createdAt": "2026-07-30T05:08:00.000Z",
+  ...
+}
+On the frontend, replace the "Unknown time" label with this createdAt value, formatted as a readable local date/time (e.g., Jul 30, 2026, 10:38 AM) instead of the raw ISO string.
 
-2. History — date/time
+2. Surface additional recommendation fields from the second workflow
 
-Replace the current "Unknown time" label with the actual date/time, sourced from the createdAt field in the API response for each run.
-Format it in a readable local format (e.g., Jul 30, 2026, 10:38 AM) instead of showing the raw ISO string.
+The workflow https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute returns additional keys under recommendations that are currently not being read or displayed:
+recommendations.citation_opportunities
+recommendations.faq_suggestions
+Update the response parsing/mapping layer to pick up these two keys (in addition to whatever is already being read from recommendations) and pass them through to the frontend.
+In the Recommendations section of the UI, render these as additional entries/rows alongside the existing recommendation items — same list/card style already used for existing recommendation entries, no new UI pattern. If citation_opportunities or faq_suggestions is an array of objects, display each object's fields consistent with how other recommendation items are currently displayed (e.g., title + description), so it doesn't need a new layout.
+If either key is missing or empty in the response, don't render an empty section — same behavior as if other recommendation types were empty.
 
-3. History — remove collapse, add explicit Back
-
-Remove any collapsible/expand behavior on the history item.
-Clicking "View" should always open the run's result in full-screen view (same full-screen behavior as the Enhanced Article view elsewhere in the app).
-Inside that full-screen view, add a "Back" button/link that returns the user to the History list — do not rely on browser back or a collapse toggle.
-
-4. Render markdown tables as actual HTML tables
-
-When the article/response content contains markdown table syntax (e.g., lines starting with | and a | --- | separator row), parse and render it as a proper HTML <table> with <thead>/<tbody>, not as raw pipe-delimited text.
-This applies wherever article content is displayed — Generator live view, Enhanced Article full-screen view, and History "View" full-screen view.
-Preserve bold/inline formatting and <br> line breaks within table cells.
-
-5. Export option in History
-
-Add the same "Export" option/button that exists in the Enhanced Article view (Generator flow) to the History "View" full-screen view as well, with identical functionality (same export format/behavior).
-
-Do not alter: the Generator/History pill toggle, form field labels/placeholders, the "Enhance article" button style, card styling, or any other existing UI element not mentioned above.
+Do not alter any other field mapping, tab layout, or existing recommendation types already being displayed.

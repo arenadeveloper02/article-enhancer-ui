@@ -10,6 +10,8 @@ const SIM_API_KEY = 'sk-sim-Vk9yj3QfVSZxJ8lulZTYK549u5ThZo9u'
 
 const SELECTED_OUTPUTS = [
   'recommendations.recommendations',
+  'recommendations.citation_opportunities',
+  'recommendations.faq_suggestions',
   'enhancedarticlewriter.content',
   'coverageverifier.criteria',
   'coverageverifier.overall_score',
@@ -54,6 +56,9 @@ export async function POST(request: Request): Promise<Response> {
   const email = emailFromBody || emailFromCookie
 
   try {
+    // The EnhancementLog row's createdAt (@default(now())) persists the run
+    // timestamp at execution time — /api/history reads it back to enrich each
+    // history entry with a createdAt value.
     await prisma.enhancementLog.create({
       data: { articleUrl, contentType, email: email || null },
     })
