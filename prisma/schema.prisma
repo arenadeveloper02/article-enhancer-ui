@@ -7,11 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Run log written by /api/enhance at execution time. /api/history reads
+// createdAt back to enrich upstream history entries with real timestamps.
 model EnhancementLog {
   id          String   @id @default(cuid())
   articleUrl  String
   contentType String
   email       String?
   createdAt   DateTime @default(now())
-  updatedAt    DateTime @default(now())
 }

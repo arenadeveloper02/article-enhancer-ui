@@ -1,21 +1,21 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-30T10:12:26.658Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-30T10:37:28.238Z.
 
 ## Overview
 
-Article Enhancer UI with live streaming enhancement, gap analysis, recommendations, coverage verification, and a History view — repaired EnhancerClient.tsx that had an invalid trailing character breaking the TypeScript build.
+Article Enhancer UI — paste an article URL, stream an AI-enhanced version live with gap analysis, recommendations, and coverage verification, plus a history view of previous runs.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 44
 
 ## Features
 
-- Streaming article enhancement with live markdown rendering
+- Streaming article enhancement with live progress checklist
+- Equal-width workflow tab navigation with no horizontal scroll
 - Gap analysis, recommendations, and coverage verification panels
-- Equal-width workflow tab navigation with no horizontal scrolling
-- History view backed by the build-history workflow
-- Print/PDF export mirroring the on-screen UI
+- History view of previous runs with the same tabbed result layout
+- Print/PDF export mirror of on-screen results
 - Arena email gate with access-denied page
 
 ## Tech Stack
@@ -152,7 +152,7 @@ Article Enhancer UI with live streaming enhancement, gap analysis, recommendatio
 
 ## Latest Change
 
-- **Updated at:** 2026-07-30T10:12:26.658Z
+- **Updated at:** 2026-07-30T10:37:28.238Z
 - **Request:** Redesign the Article Enhancer History page to improve the desktop layout and eliminate unnecessary whitespace while keeping all existing functionality intact.
 
 Requirements:

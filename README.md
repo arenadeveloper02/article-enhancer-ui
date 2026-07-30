@@ -1,15 +1,14 @@
 # article-enhancer-ui
 
-Article Enhancer Agent UI — widened Generator/History containers, real createdAt timestamps in History, full-screen History view with explicit Back and Export, and proper HTML table rendering for markdown tables.
+Article Enhancer with a wider, more compact desktop layout: ~92% viewport content width capped at 1600px, tightened header spacing (48px top, 32px to the first card), centered title and 760px description, aligned Generator/History toggle, and a wrap-friendly workflow grid with no horizontal scrollbar — all existing functionality preserved.
 
 ## Features
 
-- Streaming article enhancement with live progress checklist
-- Widened centered containers for Generator form and History list
-- History runs show real createdAt date/time in readable local format
-- History View always opens full-screen with explicit Back button
-- Export (print) available in both Generator and History full-screen views
-- Markdown tables rendered as real HTML tables with thead/tbody, preserving inline formatting and <br> in cells
+- Responsive UI with Tailwind CSS
+- Next.js App Router pages and components
+- Streaming article enhancement with live progress
+- History view with tabbed result detail and PDF export
+- Wide compact desktop layout (92% viewport, 1600px cap) with consistent spacing
 
 ## Tech Stack
 
