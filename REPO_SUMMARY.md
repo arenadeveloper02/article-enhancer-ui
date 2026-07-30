@@ -1,21 +1,20 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-30T08:14:10.237Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-30T10:12:26.658Z.
 
 ## Overview
 
-Article Enhancer Agent UI — paste an article URL, pick a content type, and watch an enhanced version stream in live with gap analysis, recommendations, and coverage verification, plus per-visitor run history.
+Article Enhancer UI with live streaming enhancement, gap analysis, recommendations, coverage verification, and a History view — repaired EnhancerClient.tsx that had an invalid trailing character breaking the TypeScript build.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 44
 
 ## Features
 
-- Streaming article enhancement with live progress checklist
-- Tabbed results: Enhanced Article, Coverage Verification, Gap Analysis, Recommendations
-- Structured Recommendations tab with Citation Opportunities, FAQ Suggestions, and Recommendations sections
-- Wider generator form layout
-- History tab with aligned Back / Export actions and read-only run detail
+- Streaming article enhancement with live markdown rendering
+- Gap analysis, recommendations, and coverage verification panels
+- Equal-width workflow tab navigation with no horizontal scrolling
+- History view backed by the build-history workflow
 - Print/PDF export mirroring the on-screen UI
 - Arena email gate with access-denied page
 
@@ -153,10 +152,196 @@ Article Enhancer Agent UI — paste an article URL, pick a content type, and wat
 
 ## Latest Change
 
-- **Updated at:** 2026-07-30T08:14:10.237Z
-- **Request:** Here are the issues i found:
-1. Under Recommendation tab, the recommendation section data os not showing properly, its just showing placeholder
-2. Increase the width ofthe form
-3. In the history tab: When the user clicks the any history, the UI is kind of breaking becuase of Back and Export cta. Alsign it properly
+- **Updated at:** 2026-07-30T10:12:26.658Z
+- **Request:** Redesign the Article Enhancer History page to improve the desktop layout and eliminate unnecessary whitespace while keeping all existing functionality intact.
 
-Keep rest everything as is
+Requirements:
+
+## 1. Increase Content Width
+- Increase the main content container from its current width to approximately 90-92% of the viewport.
+- Use a max-width between 1550px and 1650px.
+- Reduce the excessive left and right margins.
+- Every major section should align to the same width:
+  - Header
+  - URL Card
+  - Progress Navigation
+  - Recommendations
+  - Footer
+
+Do NOT make the page full width.
+
+----------------------------------------------------
+
+## 2. Fix Header Alignment
+
+The top portion currently has too much whitespace.
+
+Update it so that:
+
+- The page title remains centered.
+- The description is centered with a maximum width of 700-800px.
+- Reduce vertical spacing above and below the title.
+- Align the Generator/History toggle with the main content width.
+- Keep consistent spacing between:
+    Title
+    Description
+    Toggle
+    URL Card
+
+The page should feel balanced and compact.
+
+----------------------------------------------------
+
+## 3. Remove the Horizontal Scrollbar
+
+The workflow navigation currently requires horizontal scrolling.
+
+Remove the horizontal scrollbar completely.
+
+Requirements:
+
+- Display all workflow steps in one row on desktop.
+- Use CSS Grid or Flexbox.
+- Each step should share equal width.
+- The workflow should automatically resize to fit available space.
+- Do NOT use overflow-x.
+- Do NOT create a scrollable container.
+
+Workflow should look like:
+
+✓ Enhanced Article
+✓ Coverage Verification
+✓ Gap Analysis (25)
+✓ Recommendation
+
+On smaller screens the layout may wrap into multiple rows.
+
+----------------------------------------------------
+
+## 4. Improve Workflow Layout
+
+Current layout feels compressed.
+
+Redesign it as:
+
+--------------------------------------------------
+| Enhanced | Coverage | Gap | Recommendation |
+--------------------------------------------------
+
+The selected step should remain visually highlighted.
+
+Maintain all existing click functionality.
+
+----------------------------------------------------
+
+## 5. Improve Action Buttons
+
+Move Export and Back so they no longer compete visually with the workflow.
+
+Either:
+
+Option A:
+Place them right-aligned on the same row.
+
+or
+
+Option B:
+Move them into the URL card.
+
+Buttons should be secondary actions.
+
+Reduce their overall size.
+
+----------------------------------------------------
+
+## 6. Improve Recommendations Layout
+
+Expand the Recommendations container to use the newly available width.
+
+Benefits:
+
+- Reduce line wrapping.
+- Increase readability.
+- Keep consistent padding (32-40px).
+
+Do not change any business logic.
+
+----------------------------------------------------
+
+## 7. Improve Overall Spacing
+
+Use a consistent spacing system.
+
+Recommended spacing:
+
+Top Header:
+48px
+
+Between Header and URL Card:
+32px
+
+Between URL Card and Workflow:
+20px
+
+Between Workflow and Recommendation:
+24px
+
+Section Padding:
+32-40px
+
+Card Radius:
+16-20px
+
+----------------------------------------------------
+
+## 8. Responsive Design
+
+Desktop:
+1550-1650px max width
+
+Tablet:
+90% width
+
+Mobile:
+100% width
+
+Workflow should wrap naturally on smaller screens.
+
+There must never be a horizontal scrollbar.
+
+----------------------------------------------------
+
+## 9. Preserve Existing Functionality
+
+Do NOT modify:
+
+- API calls
+- State management
+- Data fetching
+- Recommendation logic
+- Export functionality
+- Navigation
+- History loading
+
+Only update the UI layout and styling.
+
+----------------------------------------------------
+
+## 10. Design Style
+
+Maintain the existing premium SaaS design.
+
+Use:
+
+- Large clean cards
+- Soft shadows
+- 16-20px border radius
+- Consistent spacing
+- Proper visual hierarchy
+- Minimalistic interface similar to Linear, Vercel, OpenAI Dashboard, or Notion.
+
+The page should feel significantly wider, cleaner, and easier to scan while eliminating unnecessary whitespace and removing the horizontal scrolling experience.
+
+
+CRITICAL:
+Make sure that ONLY the above changes are done. Dont make any other Changes

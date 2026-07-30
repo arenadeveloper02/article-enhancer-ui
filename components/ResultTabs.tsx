@@ -112,18 +112,23 @@ export function ResultTabs({
 
   const coveragePassed = coverageData ? coverageData.passed : null
 
-  // Header action buttons visually match the tab bar (rounded-2xl card chrome)
-  // and stretch to the same height, so Back / Export never look misaligned
-  // next to the tabs. On narrow viewports the actions wrap onto their own row
-  // below the (horizontally scrollable) tab bar instead of squashing it.
+  // Secondary action buttons (Export / Back): compact, right-aligned on the
+  // same row as the workflow tabs on desktop, wrapping below on narrow
+  // viewports. Visually quieter than the tab bar so they never compete with
+  // the workflow navigation.
   const headerButtonClasses =
-    'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-ink-soft shadow-card transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent'
+    'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-ink-soft shadow-sm transition hover:border-indigo-200 hover:text-accent-deep focus:outline-none focus-visible:outline-2 focus-visible:outline-accent'
 
+  // Workflow navigation: an equal-width CSS Grid — all four steps share one
+  // row on desktop (lg: 4 columns) and wrap into a 2×2 grid on smaller
+  // screens. There is NO overflow-x and NO scrollable container; the grid
+  // resizes to fit the available space, so a horizontal scrollbar can never
+  // appear.
   const tabList = (
     <div
       role="tablist"
       aria-label="Result sections"
-      className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-card"
+      className="grid w-full grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-card lg:grid-cols-4"
     >
       {tabs.map((tab) => (
         <button
@@ -134,14 +139,14 @@ export function ResultTabs({
           aria-selected={active === tab.key}
           aria-controls={`panel-${tab.key}`}
           onClick={() => setActive(tab.key)}
-          className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
+          className={`flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-center text-xs font-semibold transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none ${
             active === tab.key
               ? 'bg-indigo-50 text-accent-deep'
               : 'text-ink-soft hover:bg-slate-50 hover:text-ink'
           }`}
         >
           <TabStatusIcon status={tab.status} />
-          <span>{tab.label}</span>
+          <span className="min-w-0">{tab.label}</span>
           {tab.count !== null && (
             <span
               className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
@@ -168,10 +173,10 @@ export function ResultTabs({
 
   return (
     <section aria-label="Enhancement results" className="screen-only card-enter">
-      <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-stretch">
-        <div className="min-w-0 flex-1 overflow-x-auto">{tabList}</div>
+      <div className="mb-6 flex flex-col gap-2.5 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">{tabList}</div>
         {(onExport || onBack) ? (
-          <div className="flex shrink-0 items-stretch justify-end gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             {onExport && (
               <button
                 type="button"
@@ -222,7 +227,7 @@ export function ResultTabs({
         ) : null}
       </div>
       <div role="tabpanel" id={`panel-${active}`} aria-labelledby={`tab-${active}`}>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card sm:p-8">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8 lg:p-10">
           {active === 'article' && (
             <ResultCard content={content} status={articleStatus} embedded articleUrl={articleUrl} />
           )}
