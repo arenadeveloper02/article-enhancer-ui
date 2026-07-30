@@ -1,15 +1,14 @@
 # article-enhancer-ui
 
-Article Enhancer UI — fixed the Recommendations tab normalization so Citation Opportunities, FAQ Suggestions, and Recommendations are always populated from any upstream payload shape (keyed envelopes, nested recommendations objects, keyless JSON array sequences, and per-item field-shape classification). No UI or unrelated logic changes.
+Article Enhancer Agent UI — fixed the Recommendations tab so Citation Opportunities and FAQ Suggestions populate from the streamed enhance response (recommendations.citation_opportunities / recommendations.faq_suggestions / recommendations.recommendations).
 
 ## Features
 
-- Streaming article enhancement with live progress
-- Gap Analysis, Recommendations, and Coverage Verification tabs
-- Recommendations tab always populates citation opportunities, FAQ suggestions, and recommendations
-- History view with structured run detail
-- Print/PDF export mirror
-- Arena email gate with access-denied page
+- Streaming article enhancement with live tabbed results
+- Recommendations tab with Citation Opportunities, FAQ Suggestions and Recommendations sections
+- Gap Analysis and Coverage Verification panels
+- History view backed by the build-history workflow
+- Print/PDF export mirror of on-screen results
 
 ## Tech Stack
 

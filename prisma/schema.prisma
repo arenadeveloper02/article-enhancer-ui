@@ -7,9 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Persists one row per enhancement run at execution time. createdAt
-// (@default(now())) is read back by /api/history to enrich upstream history
-// entries with real run timestamps.
 model EnhancementLog {
   id          String   @id @default(cuid())
   articleUrl  String

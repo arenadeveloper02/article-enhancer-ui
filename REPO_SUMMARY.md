@@ -1,21 +1,22 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-07-30T10:52:57.317Z.
+> Auto-maintained by Sim Development. Last updated: 2026-07-30T12:14:09.863Z.
 
 ## Overview
 
-Streaming Article Enhancer UI — paste an article URL, watch the enhanced draft, gap analysis, recommendations (citation opportunities, FAQ suggestions, prioritized recommendations) and coverage verification stream in live.
+Streaming Article Enhancer UI: paste an article URL, pick a content type, and watch gap analysis, recommendations (citations, FAQs, recommendations), the enhanced article, and coverage verification stream in live.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 44
 
 ## Features
 
-- Streaming enhancement pipeline with progress checklist
-- Recommendations tab with Citation Opportunities, FAQ Suggestions, and Recommendations sections always populated from stream, merged outputs, or final salvage
-- Gap analysis and coverage verification panels
-- History view backed by build-history workflow with persisted run timestamps
-- Export/print mirror of on-screen results
+- Streaming enhancement pipeline with live progress checklist
+- Enhanced article rendered as formatted Markdown with added-content highlights
+- Gap Analysis tab (competitor strengths, coverage gaps, underdeveloped sections)
+- Recommendations tab with Citation Opportunities, FAQ Suggestions and Recommendations sections
+- Coverage verification with score ring, pass/fail and criteria justifications
+- History view backed by the build-history workflow with print/PDF export
 
 ## Tech Stack
 
@@ -151,18 +152,21 @@ Streaming Article Enhancer UI — paste an article URL, watch the enhanced draft
 
 ## Latest Change
 
-- **Updated at:** 2026-07-30T10:52:57.317Z
-- **Request:** Inside Recommendation tab:
-Make sure that the data below is populated ALWAYS:
- a. citation_opportunities (claim or stats, placement, Source_name, source_url)
- b. faq_suggestions (questions, suggested answers, why it matters)
- c. recommendations (placement, priority, rationale, recommendation)
+- **Updated at:** 2026-07-30T12:14:09.863Z
+- **Request:** Make the following changes only. Do not change any other styling, colors, spacing, copy, or layout beyond what's explicitly listed below.
 
 
-Current Behavior:
-Citation Opportunities: Showing as 0- No data
+Verify the API 
 
-FAQ Suggestions: 0- No data
+curl -X POST \
+  -H "X-API-Key: use the same API key " \
+  -H "Content-Type: application/json" \
+  -d '{"article_url":"example","article_text":"example","content_type":"example","email":"example","stream":true,"selectedOutputs":["coverageverifier.citations_count","coverageverifier.citations_found","coverageverifier.criteria","coverageverifier.faq_added","coverageverifier.faq_questions_added","coverageverifier.overall_score","coverageverifier.passed","coverageverifier.summary","enhancedarticlewriter.content","recommendations.citation_opportunities","recommendations.faq_suggestions","recommendations.recommendations","gapanalysis.competitor_strengths","gapanalysis.coverage_gaps","gapanalysis.underdeveloped_sections"]}' \
+  https://agent.thearena.ai/api/workflows/03418966-7c53-40da-86ea-597e9926e302/execute
 
-CRITICAL:
-DONT MAKE ANY UI OR ANY OTHER FUNCTIONAL OR LOGIC CHANGES
+
+
+the problem is with the citation_opportunities and faq_suggestions the data is not coming once the user click on Enhance article ... .. 
+reset all data is fyn only these citation_opportunities and faq_suggestions  is not coming ... just verify the 
+recommendations tab ... the 3 sections ... 
+rrecommendations.citation_opportunities","recommendations.faq_suggestions","recommendations.recommendations"
