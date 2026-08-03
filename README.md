@@ -1,14 +1,14 @@
 # article-enhancer-ui
 
-Article Enhancer Agent UI — fixed the Recommendations tab so Citation Opportunities and FAQ Suggestions populate from the streamed enhance response (recommendations.citation_opportunities / recommendations.faq_suggestions / recommendations.recommendations).
+Article Enhancer Agent — paste an article URL and/or the article text, pick a content type, and watch an AI agent enhance it live with streaming Markdown output. This edit makes Article URL and Article text both optional, requiring at least one of the two when the Enhance article CTA is clicked.
 
 ## Features
 
-- Streaming article enhancement with live tabbed results
-- Recommendations tab with Citation Opportunities, FAQ Suggestions and Recommendations sections
-- Gap Analysis and Coverage Verification panels
-- History view backed by the build-history workflow
-- Print/PDF export mirror of on-screen results
+- Streaming article enhancement with live Markdown output
+- Article URL and Article text are both optional — at least one required on submit
+- Gap analysis, recommendations, and coverage verification tabs
+- Run history view with printable report export
+- Arena email gating with access-denied page
 
 ## Tech Stack
 

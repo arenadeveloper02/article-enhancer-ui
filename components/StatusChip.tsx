@@ -1,9 +1,17 @@
+import type { RequestPhase } from '@/lib/types'
+
 interface StatusChipProps {
   message: string
-  elapsedSeconds: number
+  /** Elapsed run time in seconds. */
+  elapsedSeconds?: number
+  /** Alternate prop name for elapsed seconds — resolved identically. */
+  elapsed?: number
+  /** Overall request phase (accepted for caller compatibility; not rendered). */
+  phase?: RequestPhase
 }
 
-export function StatusChip({ message, elapsedSeconds }: StatusChipProps) {
+export function StatusChip({ message, elapsedSeconds, elapsed }: StatusChipProps) {
+  const seconds = elapsedSeconds ?? elapsed ?? 0
   return (
     <div
       role="status"
@@ -18,7 +26,7 @@ export function StatusChip({ message, elapsedSeconds }: StatusChipProps) {
       <span className="text-indigo-300" aria-hidden="true">
         ·
       </span>
-      <span className="shrink-0 tabular-nums">{elapsedSeconds}s elapsed</span>
+      <span className="shrink-0 tabular-nums">{seconds}s elapsed</span>
     </div>
   )
 }

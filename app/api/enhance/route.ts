@@ -41,14 +41,17 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  // Article URL and article text are BOTH optional — but at least one of the
+  // two must be provided. When only the URL is present the agent reads the
+  // article from the URL; when only the text is present the agent works from
+  // the pasted text directly.
   const articleUrl = typeof body.article_url === 'string' ? body.article_url.trim() : ''
-  // Article text is OPTIONAL — when omitted the agent reads the article from the URL.
   const articleText = typeof body.article_text === 'string' ? body.article_text.trim() : ''
   const contentType = typeof body.content_type === 'string' ? body.content_type.trim() : ''
 
-  if (!articleUrl || !contentType) {
+  if ((!articleUrl && !articleText) || !contentType) {
     return Response.json(
-      { error: 'article_url and content_type are required.' },
+      { error: 'Provide article_url or article_text (at least one), and content_type.' },
       { status: 400 },
     )
   }

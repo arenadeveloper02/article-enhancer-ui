@@ -1,7 +1,14 @@
 "use client"
 
 import { useState } from 'react'
-import type { CoverageData, GapAnalysisData, RecommendationsData, SectionStatus } from '@/lib/types'
+import type {
+  CoverageData,
+  GapAnalysisData,
+  PanelKey,
+  RecommendationsData,
+  RequestPhase,
+  SectionStatus,
+} from '@/lib/types'
 import { ResultCard } from '@/components/ResultCard'
 import { CoverageCard } from '@/components/CoverageCard'
 import { GapAnalysisCard } from '@/components/GapAnalysisCard'
@@ -10,14 +17,27 @@ import { RecommendationsCard } from '@/components/RecommendationsCard'
 type ResultTabKey = 'article' | 'coverage' | 'gap' | 'rec'
 
 interface ResultTabsProps {
-  content: string
-  articleStatus: SectionStatus
-  coverageData: CoverageData | null
-  coverageStatus: SectionStatus
-  gapData: GapAnalysisData | null
-  gapStatus: SectionStatus
-  recData: RecommendationsData | null
-  recStatus: SectionStatus
+  /** Enhanced article markdown. */
+  content?: string
+  /** Alternate prop name for the enhanced article markdown (Generator view). */
+  articleContent?: string
+  articleStatus?: SectionStatus
+  coverageData?: CoverageData | null
+  coverageStatus?: SectionStatus
+  gapData?: GapAnalysisData | null
+  gapStatus?: SectionStatus
+  recData?: RecommendationsData | null
+  recStatus?: SectionStatus
+  /**
+   * Overall request phase — used only as a status fallback when neither the
+   * per-section *Status props nor `sections` are provided.
+   */
+  phase?: RequestPhase
+  /**
+   * Per-panel section statuses keyed by panel — fallback source for the
+   * individual *Status props when a caller passes the whole map instead.
+   */
+  sections?: Partial<Record<PanelKey, SectionStatus>>
   articleUrl?: string
   /**
    * When provided (History view), a Back button appears next to the tab bar
@@ -80,6 +100,7 @@ function statusSrText(status: SectionStatus): string {
 
 export function ResultTabs({
   content,
+  articleContent,
   articleStatus,
   coverageData,
   coverageStatus,
@@ -87,6 +108,8 @@ export function ResultTabs({
   gapStatus,
   recData,
   recStatus,
+  phase,
+  sections,
   articleUrl,
   onBack,
   onExport,
@@ -96,21 +119,36 @@ export function ResultTabs({
   // are always visible right where the run happened.
   const [active, setActive] = useState<ResultTabKey>('article')
 
-  const gapCount = gapData
-    ? gapData.competitor_strengths.length +
-      gapData.coverage_gaps.length +
-      gapData.underdeveloped_sections.length
+  // Tolerant prop resolution: callers may pass either `content` or
+  // `articleContent`, and either individual *Status props or the whole
+  // `sections` map (with `phase` as a last-resort fallback). All call styles
+  // resolve to the same rendering — no behavior change between views.
+  const fallbackStatus: SectionStatus =
+    phase === 'done' ? 'done' : phase === 'streaming' ? 'streaming' : 'pending'
+  const resolvedContent = content ?? articleContent ?? ''
+  const resolvedArticleStatus = articleStatus ?? sections?.article ?? fallbackStatus
+  const resolvedCoverageStatus = coverageStatus ?? sections?.coverage ?? fallbackStatus
+  const resolvedGapStatus = gapStatus ?? sections?.gapanalysis ?? fallbackStatus
+  const resolvedRecStatus = recStatus ?? sections?.recommendations ?? fallbackStatus
+  const resolvedCoverageData = coverageData ?? null
+  const resolvedGapData = gapData ?? null
+  const resolvedRecData = recData ?? null
+
+  const gapCount = resolvedGapData
+    ? resolvedGapData.competitor_strengths.length +
+      resolvedGapData.coverage_gaps.length +
+      resolvedGapData.underdeveloped_sections.length
     : null
-  const recCount = recData ? recData.recommendations.length : null
+  const recCount = resolvedRecData ? resolvedRecData.recommendations.length : null
 
   const tabs: Array<{ key: ResultTabKey; label: string; status: SectionStatus; count: number | null }> = [
-    { key: 'article', label: 'Enhanced Article', status: articleStatus, count: null },
-    { key: 'coverage', label: 'Coverage Verification', status: coverageStatus, count: null },
-    { key: 'gap', label: 'Gap Analysis', status: gapStatus, count: gapCount },
-    { key: 'rec', label: 'Recommendations', status: recStatus, count: recCount },
+    { key: 'article', label: 'Enhanced Article', status: resolvedArticleStatus, count: null },
+    { key: 'coverage', label: 'Coverage Verification', status: resolvedCoverageStatus, count: null },
+    { key: 'gap', label: 'Gap Analysis', status: resolvedGapStatus, count: gapCount },
+    { key: 'rec', label: 'Recommendations', status: resolvedRecStatus, count: recCount },
   ]
 
-  const coveragePassed = coverageData ? coverageData.passed : null
+  const coveragePassed = resolvedCoverageData ? resolvedCoverageData.passed : null
 
   // Secondary action buttons (Export / Back): compact, right-aligned on the
   // same row as the workflow tabs on desktop, wrapping below on narrow
@@ -229,11 +267,22 @@ export function ResultTabs({
       <div role="tabpanel" id={`panel-${active}`} aria-labelledby={`tab-${active}`}>
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8 lg:p-10">
           {active === 'article' && (
-            <ResultCard content={content} status={articleStatus} embedded articleUrl={articleUrl} />
+            <ResultCard
+              content={resolvedContent}
+              status={resolvedArticleStatus}
+              embedded
+              articleUrl={articleUrl}
+            />
           )}
-          {active === 'coverage' && <CoverageCard data={coverageData} status={coverageStatus} embedded />}
-          {active === 'gap' && <GapAnalysisCard data={gapData} status={gapStatus} embedded />}
-          {active === 'rec' && <RecommendationsCard data={recData} status={recStatus} embedded />}
+          {active === 'coverage' && (
+            <CoverageCard data={resolvedCoverageData} status={resolvedCoverageStatus} embedded />
+          )}
+          {active === 'gap' && (
+            <GapAnalysisCard data={resolvedGapData} status={resolvedGapStatus} embedded />
+          )}
+          {active === 'rec' && (
+            <RecommendationsCard data={resolvedRecData} status={resolvedRecStatus} embedded />
+          )}
         </div>
       </div>
     </section>

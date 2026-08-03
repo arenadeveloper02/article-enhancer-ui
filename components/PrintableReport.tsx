@@ -7,15 +7,20 @@ import { GapAnalysisCard } from '@/components/GapAnalysisCard'
 import { RecommendationsCard } from '@/components/RecommendationsCard'
 
 interface PrintableReportProps {
-  content: string
-  articleStatus: SectionStatus
-  coverageData: CoverageData | null
-  coverageStatus: SectionStatus
-  gapData: GapAnalysisData | null
-  gapStatus: SectionStatus
-  recData: RecommendationsData | null
-  recStatus: SectionStatus
+  /** Enhanced article markdown. */
+  content?: string
+  /** Alternate prop name for the enhanced article markdown — resolved identically. */
+  articleContent?: string
+  articleStatus?: SectionStatus
+  coverageData?: CoverageData | null
+  coverageStatus?: SectionStatus
+  gapData?: GapAnalysisData | null
+  gapStatus?: SectionStatus
+  recData?: RecommendationsData | null
+  recStatus?: SectionStatus
   articleUrl?: string
+  /** Content type of the run (accepted for caller compatibility; not rendered). */
+  contentType?: string
 }
 
 /**
@@ -28,6 +33,7 @@ interface PrintableReportProps {
  */
 export function PrintableReport({
   content,
+  articleContent,
   articleStatus,
   coverageData,
   coverageStatus,
@@ -37,8 +43,23 @@ export function PrintableReport({
   recStatus,
   articleUrl,
 }: PrintableReportProps) {
+  // Tolerant prop resolution: callers may pass either `content` or
+  // `articleContent`; statuses default to 'done' for the print mirror when a
+  // caller omits them (the mirror only renders completed data anyway).
+  const resolvedContent = content ?? articleContent ?? ''
+  const resolvedArticleStatus: SectionStatus = articleStatus ?? 'done'
+  const resolvedCoverageData = coverageData ?? null
+  const resolvedCoverageStatus: SectionStatus = coverageStatus ?? 'done'
+  const resolvedGapData = gapData ?? null
+  const resolvedGapStatus: SectionStatus = gapStatus ?? 'done'
+  const resolvedRecData = recData ?? null
+  const resolvedRecStatus: SectionStatus = recStatus ?? 'done'
+
   const hasAnything =
-    content.trim().length > 0 || coverageData !== null || gapData !== null || recData !== null
+    resolvedContent.trim().length > 0 ||
+    resolvedCoverageData !== null ||
+    resolvedGapData !== null ||
+    resolvedRecData !== null
   if (!hasAnything) return null
 
   return (
@@ -49,24 +70,24 @@ export function PrintableReport({
         </h1>
         {articleUrl ? <p className="mt-1 text-sm text-ink-soft">{articleUrl}</p> : null}
       </header>
-      {content.trim() ? (
+      {resolvedContent.trim() ? (
         <div className="print-card mb-6">
-          <ResultCard content={content} status={articleStatus} articleUrl={articleUrl} />
+          <ResultCard content={resolvedContent} status={resolvedArticleStatus} articleUrl={articleUrl} />
         </div>
       ) : null}
-      {coverageData !== null ? (
+      {resolvedCoverageData !== null ? (
         <div className="print-card mb-6">
-          <CoverageCard data={coverageData} status={coverageStatus} />
+          <CoverageCard data={resolvedCoverageData} status={resolvedCoverageStatus} />
         </div>
       ) : null}
-      {gapData !== null ? (
+      {resolvedGapData !== null ? (
         <div className="print-card mb-6">
-          <GapAnalysisCard data={gapData} status={gapStatus} />
+          <GapAnalysisCard data={resolvedGapData} status={resolvedGapStatus} />
         </div>
       ) : null}
-      {recData !== null ? (
+      {resolvedRecData !== null ? (
         <div className="print-card mb-6">
-          <RecommendationsCard data={recData} status={recStatus} />
+          <RecommendationsCard data={resolvedRecData} status={resolvedRecStatus} />
         </div>
       ) : null}
     </div>
