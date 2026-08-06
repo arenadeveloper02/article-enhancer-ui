@@ -25,9 +25,13 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
   //  2. stripBoilerplateListBlocks: defensive filter that removes scraped
   //     nav/footer-style link-only list blocks.
   //  3. formatEnhancedMarkdown (presentation only): strips raw JSON code
-  //     blocks and bare JSON dumps so JSON never appears in the UI, and
-  //     normalizes em/en dash clause separators to natural punctuation.
-  //     Streaming-safe: JSON is only removed once structurally complete.
+  //     blocks, bare JSON dumps AND trailing structured-data dumps (coverage
+  //     arrays, citation lists, bare scores/booleans) so machine payloads
+  //     never appear in the UI; decodes unicode escapes so \uXXXX codes are
+  //     never shown as text; normalizes markdown tables to consistent column
+  //     counts; and normalizes em/en dash clause separators to natural
+  //     punctuation. Streaming-safe: JSON is only removed once structurally
+  //     complete.
   const displayContent = formatEnhancedMarkdown(
     stripBoilerplateListBlocks(preprocessArticleContent(content)),
   )
@@ -61,7 +65,7 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
       <div className={embedded ? '' : 'p-6 sm:p-8'}>
         <SectionHeader
           title="Enhanced Article"
-          icon="\u270D"
+          icon="✍"
           status={status}
           accent
           actions={

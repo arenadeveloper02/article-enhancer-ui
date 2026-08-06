@@ -1,15 +1,15 @@
 # article-enhancer-ui
 
-Article Enhancer Agent UI: paste an article or URL, pick a content type, and watch an AI agent enhance it live with streaming Markdown output. This edit applies presentation-only formatting rules to the rendered output: full-width Enhanced Article layout, no raw JSON in the UI, and em/en dash clause separators normalized to natural punctuation.
+Article Enhancer with cleaned article output: raw JSON/coverage data dumps are stripped from the Enhanced Article tab, markdown tables are normalized to consistent column counts, and Unicode escape sequences are decoded to real characters before rendering.
 
 ## Features
 
-- Streaming enhancement with live tabbed results (Enhanced Article, Coverage Verification, Gap Analysis, Recommendations)
-- Full-width Enhanced Article rendering with structured markdown (headings, lists, GFM tables)
-- Defensive rendering filters: boilerplate nav/footer list stripping, raw JSON block removal, dash punctuation normalization
-- Print/PDF export that mirrors the on-screen components
-- History view backed by the upstream workflow with per-run detail tabs
-- Arena email gating via middleware and cookie persistence
+- Streaming article enhancement with live Markdown output
+- Raw JSON / coverage-verifier dumps never shown in the Enhanced Article tab
+- Markdown tables preserved and normalized to consistent columns
+- Unicode escapes decoded to real characters in rendered output
+- Gap analysis, recommendations and coverage verification tabs
+- History view and print/export report
 
 ## Tech Stack
 

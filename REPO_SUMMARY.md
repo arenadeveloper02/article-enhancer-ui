@@ -1,21 +1,21 @@
 # Repository Summary: article-enhancer-ui
 
-> Auto-maintained by Sim Development. Last updated: 2026-08-06T11:01:03.796Z.
+> Auto-maintained by Sim Development. Last updated: 2026-08-06T12:09:17.680Z.
 
 ## Overview
 
-Arena-embedded Article Enhancer UI: paste an article URL or text, pick a content type, and stream an enhanced article with gap analysis, recommendations, and coverage verification.
+Article Enhancer UI — paste an article URL or text, pick a content type, and watch an AI agent stream back an enhanced article with gap analysis, recommendations, and coverage verification.
 
 **Repository:** `article-enhancer-ui`  
 **File count:** 45
 
 ## Features
 
-- Streaming article enhancement with live status and progress checklist
-- Tabbed results: Enhanced Article, Coverage Verification, Gap Analysis, Recommendations
-- History view backed by the build-history workflow with createdAt enrichment from Prisma
-- Print/PDF export mirror that reuses the on-screen components
-- Arena email gate via middleware cookie and access-denied page
+- Streaming enhanced-article generation with live progress checklist
+- Gap analysis, recommendations, and coverage verification tabs
+- History view backed by the build-history workflow
+- Print/PDF export mirroring the on-screen UI
+- Arena email gate with access-denied page
 
 ## Tech Stack
 
@@ -153,54 +153,45 @@ Arena-embedded Article Enhancer UI: paste an article URL or text, pick a content
 
 ## Latest Change
 
-- **Updated at:** 2026-08-06T11:01:03.796Z
-- **Request:** ## Output formatting (presentation only — do not change content selection, tone, or task behavior)
+- **Updated at:** 2026-08-06T12:09:17.680Z
+- **Request:** **CRITICAL: Don't change any Other functionality or UI other than the below-mentioned points.
 
-Keep the same substance and structure of what you already produce. Change only how it is rendered.
+0) Article enhancer tab after generating the response its showing this way: manage the data 
+6 [{"claim":"A national survey of 494 Indian dentists found sterilization methods vary considerably, with about 53.8% reporting boiling water and 53.8% reporting autoclaving, while 93.5% agreed universal precautions should apply to every patient.","source_name":"Current biomedical waste management practices and cross-infection control procedures of dentists in India","source_url":"https://pmc.ncbi.nlm.nih.gov/articles/PMC9374936/"},{"claim":"A pilot study of Indian dental clinicians found awareness of updated infection-control protocols is around 90%, while actual implementation was closer to 61% in some reports.","source_name":"Assessing the Compliance of Dental Clinicians towards Regulatory Infection Control Guidelines Using a Newly Developed Survey Tool: A Pilot Cross-Sectional Study in India","source_url":"https://www.mdpi.com/2227-9032/10/10/1877"},{"claim":"India's Ministry of Health and Family Welfare operational guidelines call for timely sterilization of instruments, maintained clinic cleanliness, and proper bio-medical waste management as core components of quality dental care delivery.","source_name":"Operational Guidelines for Oral Health Care at Health and Wellness Centres","source_url":"https://aam.mohfw.gov.in/download/document/Oral_Health_(Inner)-Brown(FINAL).pdf"},{"claim":"A systematic review found limited access to dental facilities, long wait times, and inadequate infrastructure reduce dental care utilization in India, while availability of private clinics helps enable access.","source_name":"Factors influencing dental care services utilization in India using Andersen health behaviour model: a systematic review","source_url":"https://link.springer.com/article/10.1186/s12913-025-13252-0"},{"claim":"A meta-analysis found pooled dental care utilization in India at about 24%, with the South Zone showing the highest regional utilization at roughly 30%.","source_name":"Utilization of dental care services among adult Indian population: A meta-analysis of evidence from 2011 to 2022","source_url":"https://pmc.ncbi.nlm.nih.gov/articles/PMC9958237/"},{"claim":"Aseptic and sterilization-conscious protocols are aligned with standards recommended in national infection-control guidelines for Indian dental practices.","source_name":"Operational Guidelines for Oral Health Care at Health and Wellness Centres","source_url":"https://aam.mohfw.gov.in/download/document/Oral_Health_(Inner)-Brown(FINAL).pdf"}] [{"justification":"Most major gaps were addressed: services, doctor credentials, second doctor, phone, timings, sterilization detail, FAQ, differentiation, landmark/directions, ratings mention, and emergency mention. Still weak or incomplete on parking/accessibility specifics, broken map not truly fixed in-page, pricing transparency remains partial, and testimonials appear likely fabricated/unattributed.","name":"gap_coverage","score":85},{"justification":"The original article content appears preserved in place, with additions appended rather than replacing/deleting existing text.","name":"original_preserved","score":98},{"justification":"All visible new substantive additions are wrapped in ... blocks.","name":"additions_marked","score":100},{"justification":"Research citations use allowed sources, but several non-research factual additions lack attribution or rely on competitor/directory claims without inline source links: doctor experience/credentials, phone number, Practo rating/review count, fee range, Sunday timing comparison, and quoted testimonials. The three patient quotes appear invented or at least unsourced. There are also vague claims like 'served the community for years.'","name":"factual_grounding","score":52},{"justification":"Additions generally match the informational local-listing style and markdown structure, though some sections are more editorial/research-heavy than the original and slightly overextended for a clinic profile.","name":"tone_consistency","score":82},{"justification":"A clear FAQ section was added with 8 Q&A pairs, covering all suggested questions with real answers.","name":"faq_added","score":100},{"justification":"The enhanced article includes multiple genuine inline citations with links to authoritative sources from the allowed list. However, some important non-research claims still lack inline citations.","name":"citations_added","score":90}] true ["What dental services does Gentle Dental in Chandra Layout offer?","Does Gentle Dental have a second dentist besides Dr. Arvind and Dr. Anitha?","What is the consultation fee at Gentle Dental Chandra Layout?","What are Gentle Dental's Sunday timings?","Is Gentle Dental good for emergency dental treatment?","How do I contact Gentle Dental to book an appointment?","Is Gentle Dental clinic accessible by public transport or does it have parking?","How many patients have reviewed Gentle Dental and what is its rating?"] 87 true The enhancement substantially improves coverage and includes a strong FAQ plus multiple authoritative inline citations. Original content was preserved and additions were properly marked. The main quality issue is factual grounding: several clinic-specific claims are not attributed inline, and the added testimonial quotes appear unsupported. Despite that, the article meets the pass threshold because it has robust gap coverage, a qualifying FAQ, and at least 3 inline citations.
 
-### Prefer structured markdown over paragraphs
-- Do not flatten lists into prose. If the source has bullets, numbered steps, key takeaways, or distinct points, render them as real markdown lists (`-` or `1.`), not as comma-/semicolon-separated sentences inside a paragraph.
-- Use short headings (`##` / `###`) to separate sections when the content has clear parts.
-- Use paragraphs only for true narrative prose. Prefer list + heading layout whenever the material is point-based.
-- Apply this the same way for published URLs and unpublished/draft/pasted article text. Source type must not change formatting quality.
+1) ### Preserve tables
 
-### Preserve tables
-- If the source contains a table (or tabular comparison: rows/columns, matrix, schedule, specs), reproduce it as a markdown table.
-- Do not convert tables into paragraphs, bullet lists, or prose summaries unless the user explicitly asks for a summary instead of the table.
-- Keep column headers and row alignment; omit a table only if the source truly has none.
+- If the source contains a table (or tabular data: rows/columns, matrix,
+  comparison, schedule, specs), reproduce it as a single markdown table —
+  never as paragraphs, prose, or standalone bullet lists.
 
-### Show data only in relevant sections
-- Place each piece of content only under the section it belongs to. Do not repeat the same facts, lists, or tables across unrelated sections.
-- Do not dump mixed or leftover content into a catch-all paragraph. If something does not fit a section, omit it or put it only where it is relevant.
-- Keep each section focused: one topic per section; no cross-section bleed of unrelated points.
+- One source row = one markdown table row. Never split a single row's
+  content into multiple rows.
 
-### No JSON in the UI
-- Never show raw JSON, JSON code blocks, or JSON-looking key/value dumps in the user-facing output.
-- If you need structured data, render it as readable markdown: headings, bullets, numbered lists, or tables.
-- Do not expose internal payloads, API responses, metadata objects, or debug structures in the UI.
+- One source cell = one markdown table cell. If a cell contains multiple
+  items (a bullet list, multiple lines, multiple facts), keep them INSIDE
+  that one cell by joining them with "<br>" — do NOT let them break out
+  into separate rows or top-level bullets outside the table.
 
-### Enhanced Article layout and width usage
-- This output is shown in the Enhanced Article tab. Structure it so it uses the full content width, not a narrow left-only column of paragraphs.
-- Prefer width-friendly structure:
-  - Comparison content → markdown tables (full width)
-  - Types, options, steps, criteria → bulleted or numbered lists
-  - Distinct topics → clear `##` / `###` headings with short sections
-- Avoid long wall-of-text paragraphs when the material is comparative or list-like (e.g. sedation types should be a table or sectioned lists, not one dense paragraph).
-- Do not leave large empty regions by dumping everything into a single narrow prose block. Distribute content across sections, lists, and tables that read clearly across the available width.
-- Still show each piece of data only in its relevant section; do not fill space with repeated or unrelated content.
+- Every row must have the same number of columns as the header row. If a
+  value is missing, leave that cell blank — never shift other columns to
+  compensate.
+
+- Do not merge, reorder, or drop rows/columns. Do not summarize or
+  shorten cell content.
+
+- Before outputting, self-check: does every row have the same number of
+  "|" separators as the header? Does every bullet/list item from the
+  source appear inside its correct cell, not as a separate row? Fix
+  silently if not, then output only the corrected table.
 
 
-### No broken text
-- Output must be complete, readable, and well-formed. No truncated sentences, cut-off mid-word text, or unfinished lists/tables.
-- No broken markdown: unclosed bold/italic, orphan bullets, half-rendered tables, or fragmented headings.
-- No garbled characters, duplicated fragments, or glued-together words from poor parsing.
-- If source text is messy, clean and reconstruct it into coherent markdown; do not pass broken fragments through to the UI.
+2) ### No Unicode escapes or raw code points in the UI
+- Never output Unicode escape sequences such as `\u270D`, `\u2014`, `\n` as visible text, or similar `\uXXXX` / `\UXXXXXXXX` forms.
+- Always render the actual character (e.g. ✍, not `\u270D`). If a symbol is not needed, omit it entirely.
+- Prefer plain text over decorative symbols and emoji unless the product explicitly requires them.
+- Do not show HTML entities (`&amp;`, `&#x270D;`) or escaped markdown as raw strings in the UI.
 
-### Punctuation
-- Do not use em dashes (—) or en dashes (–) as clause separators.
-- Prefer commas, periods, colons, parentheses, or a short new sentence instead.
-- Hyphens in compound words (e.g. "well-known") are fine.
 
-### Non-goals (do not change)
-- Do not alter what content you include or exclude beyond formatting rules above.
-- Do not change voice, length targets, sections, or other existing behaviors unless required to apply these formatting rules.
+CRITICAL:
+DON'T MAKE ANY UI OR ANY OTHER FUNCTIONAL OR LOGIC CHANGES
