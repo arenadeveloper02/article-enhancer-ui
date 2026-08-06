@@ -5,6 +5,7 @@ import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { SectionHeader } from '@/components/SectionHeader'
 import { preprocessArticleContent, stripArticleMarkers } from '@/lib/normalize'
 import { stripBoilerplateListBlocks } from '@/lib/boilerplate'
+import { formatEnhancedMarkdown } from '@/lib/format'
 import type { SectionStatus } from '@/lib/types'
 
 interface ResultCardProps {
@@ -17,12 +18,22 @@ interface ResultCardProps {
 export function ResultCard({ content, status, embedded = false, articleUrl }: ResultCardProps) {
   const [copied, setCopied] = useState(false)
 
-  // Single shared preprocessing step: <br> → real line breaks, [+ADDED]…[/ADDED]
-  // → inline <mark> highlights (progressive while streaming). The raw marker
-  // tokens never reach the renderer or the clipboard. A defensive boilerplate
-  // filter then strips nav/footer-style link-only list blocks before rendering.
-  const displayContent = stripBoilerplateListBlocks(preprocessArticleContent(content))
-  const cleanContent = stripArticleMarkers(content)
+  // Shared preprocessing pipeline before rendering:
+  //  1. preprocessArticleContent: <br> -> real line breaks, [+ADDED]...[/ADDED]
+  //     -> inline <mark> highlights (progressive while streaming). The raw
+  //     marker tokens never reach the renderer or the clipboard.
+  //  2. stripBoilerplateListBlocks: defensive filter that removes scraped
+  //     nav/footer-style link-only list blocks.
+  //  3. formatEnhancedMarkdown (presentation only): strips raw JSON code
+  //     blocks and bare JSON dumps so JSON never appears in the UI, and
+  //     normalizes em/en dash clause separators to natural punctuation.
+  //     Streaming-safe: JSON is only removed once structurally complete.
+  const displayContent = formatEnhancedMarkdown(
+    stripBoilerplateListBlocks(preprocessArticleContent(content)),
+  )
+  // Clipboard copy gets the same presentation cleanup so copied text matches
+  // exactly what is rendered on screen (minus the highlight marks).
+  const cleanContent = formatEnhancedMarkdown(stripArticleMarkers(content))
   const wordCount = cleanContent.trim() ? cleanContent.trim().split(/\s+/).length : 0
 
   function handleCopy(): void {
@@ -50,7 +61,7 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
       <div className={embedded ? '' : 'p-6 sm:p-8'}>
         <SectionHeader
           title="Enhanced Article"
-          icon="✍"
+          icon="\u270D"
           status={status}
           accent
           actions={
@@ -71,7 +82,12 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
           }
         />
         {content ? (
-          <div className="max-w-[68ch]">
+          // Full-width article column: headings, lists and markdown tables use
+          // the entire available panel width instead of a narrow 68ch strip,
+          // so comparison tables and sectioned lists read clearly across the
+          // tab. Line lengths stay comfortable because the surrounding panel
+          // already caps overall width.
+          <div className="w-full">
             <MarkdownRenderer content={displayContent} baseUrl={articleUrl} />
             {status === 'streaming' && (
               <span

@@ -1,14 +1,15 @@
 # article-enhancer-ui
 
-Article Enhancer Agent — paste an article URL and/or the article text, pick a content type, and watch an AI agent enhance it live with streaming Markdown output. This edit makes Article URL and Article text both optional, requiring at least one of the two when the Enhance article CTA is clicked.
+Article Enhancer Agent UI: paste an article or URL, pick a content type, and watch an AI agent enhance it live with streaming Markdown output. This edit applies presentation-only formatting rules to the rendered output: full-width Enhanced Article layout, no raw JSON in the UI, and em/en dash clause separators normalized to natural punctuation.
 
 ## Features
 
-- Streaming article enhancement with live Markdown output
-- Article URL and Article text are both optional — at least one required on submit
-- Gap analysis, recommendations, and coverage verification tabs
-- Run history view with printable report export
-- Arena email gating with access-denied page
+- Streaming enhancement with live tabbed results (Enhanced Article, Coverage Verification, Gap Analysis, Recommendations)
+- Full-width Enhanced Article rendering with structured markdown (headings, lists, GFM tables)
+- Defensive rendering filters: boilerplate nav/footer list stripping, raw JSON block removal, dash punctuation normalization
+- Print/PDF export that mirrors the on-screen components
+- History view backed by the upstream workflow with per-run detail tabs
+- Arena email gating via middleware and cookie persistence
 
 ## Tech Stack
 
