@@ -93,7 +93,7 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
       <div className={embedded ? '' : 'p-6 sm:p-8'}>
         <SectionHeader
           title="Enhanced Article"
-          icon="\u270D"
+          icon="✍️"
           status={status}
           accent
           actions={

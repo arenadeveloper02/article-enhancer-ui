@@ -1,14 +1,14 @@
 # article-enhancer-ui
 
-Fixed the Enhanced Article tab blanking after streaming completes. components/ResultCard.tsx (lines ~20-55): the presentation formatter (formatEnhancedMarkdown) can strip the final post-stream payload entirely (e.g. when the closing chunk collapses into a structured JSON dump) or the parent momentarily clears `content` at [DONE], which emptied the rendered article right when the run finished. ResultCard now remembers the last non-empty formatted render in refs (lastDisplayRef / lastCleanRef) and keeps showing it whenever the freshly formatted output goes empty after content already rendered, with a raw preprocessed fallback for cold mounts. Render and copy-button conditions switched from `content` to the resolved displayContent/cleanContent so the article, word count, and Copy action survive stream completion. prisma/schema.prisma echoed unchanged (EnhancementLog model used by /api/enhance) — no columns added, removed, or altered.
+Article Enhancer Agent — paste an article, pick a content type, and watch an AI agent enhance it live with streaming Markdown output. This edit fixes the Enhanced Article section label so the writing-hand icon renders as the actual character instead of leaking the raw \u270D escape sequence into the UI.
 
 ## Features
 
-- Streaming article enhancement with live Markdown output
+- Streaming AI article enhancement with live Markdown rendering
 - Tabbed results: Enhanced Article, Coverage Verification, Gap Analysis, Recommendations
-- Enhanced Article content persists after streaming completes (post-stream blanking fixed)
-- History view with per-run detail and export/print
-- Arena email gating via middleware and cookie
+- Print/PDF export mirror of on-screen results
+- History view of past runs
+- Arena email gate with cookie persistence
 
 ## Tech Stack
 
