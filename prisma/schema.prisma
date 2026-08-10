@@ -8,6 +8,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Logs every enhancement run kicked off through /api/enhance. createdAt
+// (@default(now())) persists the run timestamp at execution time \u2014
+// /api/history reads it back to enrich each history entry.
 model EnhancementLog {
   id          String   @id @default(cuid())
   articleUrl  String

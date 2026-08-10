@@ -1,15 +1,14 @@
 # article-enhancer-ui
 
-Article Enhancer with cleaned article output: raw JSON/coverage data dumps are stripped from the Enhanced Article tab, markdown tables are normalized to consistent column counts, and Unicode escape sequences are decoded to real characters before rendering.
+Fixed the Enhanced Article tab blanking after streaming completes. components/ResultCard.tsx (lines ~20-55): the presentation formatter (formatEnhancedMarkdown) can strip the final post-stream payload entirely (e.g. when the closing chunk collapses into a structured JSON dump) or the parent momentarily clears `content` at [DONE], which emptied the rendered article right when the run finished. ResultCard now remembers the last non-empty formatted render in refs (lastDisplayRef / lastCleanRef) and keeps showing it whenever the freshly formatted output goes empty after content already rendered, with a raw preprocessed fallback for cold mounts. Render and copy-button conditions switched from `content` to the resolved displayContent/cleanContent so the article, word count, and Copy action survive stream completion. prisma/schema.prisma echoed unchanged (EnhancementLog model used by /api/enhance) — no columns added, removed, or altered.
 
 ## Features
 
 - Streaming article enhancement with live Markdown output
-- Raw JSON / coverage-verifier dumps never shown in the Enhanced Article tab
-- Markdown tables preserved and normalized to consistent columns
-- Unicode escapes decoded to real characters in rendered output
-- Gap analysis, recommendations and coverage verification tabs
-- History view and print/export report
+- Tabbed results: Enhanced Article, Coverage Verification, Gap Analysis, Recommendations
+- Enhanced Article content persists after streaming completes (post-stream blanking fixed)
+- History view with per-run detail and export/print
+- Arena email gating via middleware and cookie
 
 ## Tech Stack
 

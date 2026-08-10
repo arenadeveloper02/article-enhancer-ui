@@ -30,8 +30,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ['var(--font-sans)', 'Poppins', 'ui-sans-serif', 'sans-serif'],
-        sans: ['var(--font-sans)', 'Poppins', 'ui-sans-serif', 'sans-serif'],
+        display: ['var(--font-sans)', 'Poppins', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-sans)', 'Poppins', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         card: '0 2px 8px rgba(44, 45, 51, 0.10)',

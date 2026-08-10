@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { SectionHeader } from '@/components/SectionHeader'
 import { preprocessArticleContent, stripArticleMarkers } from '@/lib/normalize'
@@ -32,12 +32,40 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
   //     counts; and normalizes em/en dash clause separators to natural
   //     punctuation. Streaming-safe: JSON is only removed once structurally
   //     complete.
-  const displayContent = formatEnhancedMarkdown(
+  const formattedDisplay = formatEnhancedMarkdown(
     stripBoilerplateListBlocks(preprocessArticleContent(content)),
   )
+  // UI FIX (post-stream blanking): once streaming completes, the FINAL
+  // payload can collapse into a shape the presentation formatter strips
+  // entirely (e.g. the closing chunk turns the accumulated text into one
+  // structurally complete JSON dump, which formatEnhancedMarkdown removes),
+  // or the parent can momentarily clear `content` while finalizing. Either
+  // way the formatted output goes empty AFTER the article already rendered,
+  // wiping the Enhanced Article tab at completion. Remember the last
+  // non-empty render and keep showing it whenever the fresh formatting pass
+  // comes back empty \u2014 the article never disappears once it has been shown.
+  const lastDisplayRef = useRef('')
+  if (formattedDisplay.trim()) {
+    lastDisplayRef.current = formattedDisplay
+  }
+  const displayContent = formattedDisplay.trim()
+    ? formattedDisplay
+    : lastDisplayRef.current.trim()
+      ? lastDisplayRef.current
+      : stripBoilerplateListBlocks(preprocessArticleContent(content))
   // Clipboard copy gets the same presentation cleanup so copied text matches
-  // exactly what is rendered on screen (minus the highlight marks).
-  const cleanContent = formatEnhancedMarkdown(stripArticleMarkers(content))
+  // exactly what is rendered on screen (minus the highlight marks) \u2014 with the
+  // same last-good fallback so Copy keeps working after the stream finishes.
+  const formattedClean = formatEnhancedMarkdown(stripArticleMarkers(content))
+  const lastCleanRef = useRef('')
+  if (formattedClean.trim()) {
+    lastCleanRef.current = formattedClean
+  }
+  const cleanContent = formattedClean.trim()
+    ? formattedClean
+    : lastCleanRef.current.trim()
+      ? lastCleanRef.current
+      : stripArticleMarkers(content)
   const wordCount = cleanContent.trim() ? cleanContent.trim().split(/\s+/).length : 0
 
   function handleCopy(): void {
@@ -65,7 +93,7 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
       <div className={embedded ? '' : 'p-6 sm:p-8'}>
         <SectionHeader
           title="Enhanced Article"
-          icon="✍"
+          icon="\u270D"
           status={status}
           accent
           actions={
@@ -73,7 +101,7 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-slate-600">
                 {wordCount} {wordCount === 1 ? 'word' : 'words'}
               </span>
-              {content ? (
+              {cleanContent.trim() ? (
                 <button
                   type="button"
                   onClick={handleCopy}
@@ -85,7 +113,7 @@ export function ResultCard({ content, status, embedded = false, articleUrl }: Re
             </>
           }
         />
-        {content ? (
+        {displayContent.trim() ? (
           // Full-width article column: headings, lists and markdown tables use
           // the entire available panel width instead of a narrow 68ch strip,
           // so comparison tables and sectioned lists read clearly across the
